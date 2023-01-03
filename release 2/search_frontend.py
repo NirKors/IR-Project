@@ -1,3 +1,4 @@
+from inspect import isdatadescriptor
 import os
 import pickle
 import re
@@ -138,18 +139,24 @@ def search_title():
         pages = pickle.load(f)
 
     index = InvertedIndex.read_index("/content/title_index", "all_words")  # TODO: Change later to take from bucket
-    ids = []
+
+    ids = {}
     for word, pls in index.posting_lists_iter():
-        for qword in query:
-            if qword == word:
-                ids.append(pls[0][0])
+      for qword in query:
+          if qword == word:
+              for one_pls in pls:
+                ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
 
+    res = []
     for page in pages:
-        if page[0] in ids:
-            res.append((page[0], page[1]))
-
+        if page[0] in ids.keys():
+            res.append(((page[0], page[1]), ids[page[0]]))
+    # TODO: apply tokenizer, make sure to check if capitalization matters.
+    # print(query)
+    # for x in sorted(res, key=lambda x: x[1], reverse=True):
+    #   print(x)
     # END SOLUTION
-    return jsonify(res)
+    return jsonify([x[0] for x in sorted(res, key=lambda x: x[1], reverse=True)])
 
 
 @app.route("/search_anchor")
