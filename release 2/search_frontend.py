@@ -1,7 +1,32 @@
+import os
+import pickle
+import re
+from collections import Counter
+from pathlib import Path
+
 from flask import Flask, request, jsonify
 from nltk.corpus import stopwords
-import re
+
 from inverted_index_gcp import InvertedIndex
+
+
+# os.environ["JAVA_HOME"] = "/usr/lib/jvm/java-8-openjdk-amd64"
+# graphframes_jar = 'https://repos.spark-packages.org/graphframes/graphframes/0.8.2-spark3.2-s_2.12/graphframes-0.8.2-spark3.2-s_2.12.jar'
+# spark_jars = '/usr/local/lib/python3.7/dist-packages/pyspark/jars'
+# !wget -N -P $spark_jars $graphframes_jar
+# import pyspark
+# from pyspark.sql import *
+# from pyspark import SparkConf
+
+# # Initializing spark context
+# # create a spark context and session
+# conf = SparkConf().set("spark.ui.port", "4050")
+# conf.set("spark.jars.packages", "graphframes:graphframes:0.8.2-spark3.2-s_2.12")
+# sc = pyspark.SparkContext(conf=conf)
+# sc.addPyFile(str(Path(spark_jars) / Path(graphframes_jar).name))
+# spark = SparkSession.builder.getOrCreate()
+# spark
+
 
 class MyFlaskApp(Flask):
     def run(self, host=None, port=None, debug=None, **options):
@@ -66,7 +91,6 @@ def search_body():
     return jsonify(res)
 
 
-
 @app.route("/search_title")
 def search_title():
     ''' Returns ALL (not just top 100) search results that contain A QUERY WORD
@@ -106,62 +130,26 @@ def search_title():
     # tokens = [token.group() for token in RE_WORD.finditer(text.lower())]
 
 
+    res = []
+    query = query.split()
 
+    pkl_file = "/content/part15_preprocessed.pkl"
+    with open(pkl_file, 'rb') as f:
+        pages = pickle.load(f)
 
+    index = InvertedIndex.read_index("/content/title_index", "all_words")  # TODO: Change later to take from bucket
+    ids = []
+    for word, pls in index.posting_lists_iter():
+        for qword in query:
+            if qword == word:
+                ids.append(pls[0][0])
 
-    index = InvertedIndex.read_index("/content/title_index", "all_words") # TODO: Change later to take from bucket
-    test1, test2 = zip(*(index.posting_lists_iter()))
-    print(test1)
-    print(test2)
-
-
-
-    # Solution
-    res = [(1, "biggus testus")]
+    for page in pages:
+        if page[0] in ids:
+            res.append((page[0], page[1]))
 
     # END SOLUTION
     return jsonify(res)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @app.route("/search_anchor")
