@@ -245,7 +245,13 @@ def get_pagerank():
         return jsonify(res)
     # BEGIN SOLUTION
 
-    pr_rdd = pagerank_of_all()
+    # TODO: Change later to take from bucket
+    pkl_file = "/content/part15_preprocessed.pkl"
+    with open(pkl_file, 'rb') as f:
+        pages = pickle.load(f)
+    ########################################
+
+    pr_rdd = pagerank_of_all(pages)
     for id in wiki_ids:
         filtered_rdd = pr_rdd.filter(lambda x: id in x)
         res.append(filtered_rdd.values())
@@ -253,19 +259,11 @@ def get_pagerank():
     # END SOLUTION
     return jsonify(res)
 
-def pagerank_of_all():
+def pagerank_of_all(pgs):
     """ Returns the pagerank of all the ids
     :return:
     rdd of id,pagerank
     """
-    # We will start by making an RDD similar to what was in assignment 3
-    pkl_file = "/content/part15_preprocessed.pkl"
-    with open(pkl_file, 'rb') as f:
-        pgs = pickle.load(f)
-    # Now my pgs are like so:
-    # pgs: list of tuples
-    # Each tuple is a wiki article with id, title, body, and
-    # [(target_article_id, anchor_text), ...]
 
     # Now we will only take the important part, which is our id/anchor_text
     list_for_rdd = []
