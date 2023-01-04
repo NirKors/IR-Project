@@ -125,7 +125,7 @@ def search_body():
     i = 0
     for page in pages:
         try:
-            df, vector = tf_idf_scores([page[2]])
+            df, vector = tf_idf_scores([page[2]])  # TODO: should be document*S* please fixy
             df_tfidfvect.append(df)
             tfidfvectorizer.append(vector)
         except ValueError:
@@ -224,6 +224,7 @@ def search_anchor():
     return jsonify(res)
 
 
+@app.route("/get_pagerank", methods=['POST'])
 def get_pagerank():
     ''' Returns PageRank values for a list of provided wiki article IDs.
 
@@ -245,41 +246,8 @@ def get_pagerank():
         return jsonify(res)
     # BEGIN SOLUTION
 
-    # TODO: Change later to take from bucket
-    pkl_file = "/content/part15_preprocessed.pkl"
-    with open(pkl_file, 'rb') as f:
-        pages = pickle.load(f)
-    ########################################
-
-    pr_rdd = pagerank_of_all(pages)
-    for id in wiki_ids:
-        filtered_rdd = pr_rdd.filter(lambda x: id in x)
-        res.append(filtered_rdd.values())
-
     # END SOLUTION
     return jsonify(res)
-
-def pagerank_of_all(pgs):
-    """ Returns the pagerank of all the ids
-    :return:
-    rdd of id,pagerank
-    """
-
-    # Now we will only take the important part, which is our id/anchor_text
-    list_for_rdd = []
-    for pg in pgs:
-        list_for_rdd += pg[3]
-
-    pages = sc.parallelize(list_for_rdd)
-    edges = pages.flatMap(lambda x: ([(x[0], row[0]) for row in x[1]])).distinct()
-    vertices = edges.flatMap(lambda x: (Row(x[0]), Row(x[1]))).distinct()
-    edgesDF = edges.toDF(['src', 'dst']).repartition(4, 'src')
-    verticesDF = vertices.toDF(['id']).repartition(4, 'id')
-    g = GraphFrame(verticesDF, edgesDF)
-    pr_results = g.pageRank(resetProbability=0.15, maxIter=10)
-    pr = pr_results.vertices.select("id", "pagerank")
-    pr.repartition(1).write.csv('pr', compression="gzip")
-    return pr
 
 
 @app.route("/get_pageview", methods=['POST'])
