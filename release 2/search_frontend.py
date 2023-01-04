@@ -1,16 +1,35 @@
+from inspect import isdatadescriptor
+import os
+import pickle
 import re
+from collections import Counter
+from pathlib import Path
 
-import nltk
-import pandas as pd
 from flask import Flask, request, jsonify
+from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
+from collections import defaultdict, Counter
+import re
+import nltk
+import pickle
+import numpy as np
 
 nltk.download('stopwords')
 
 from nltk.corpus import stopwords
+from tqdm import tqdm
+import operator
+from itertools import islice, count
+from contextlib import closing
 
+import json
+from io import StringIO
+from pathlib import Path
+from operator import itemgetter
 import pickle
+import matplotlib.pyplot as plt
 from inverted_index_gcp import InvertedIndex
 
 
@@ -91,12 +110,35 @@ def search_body():
         return jsonify(res)
     # BEGIN SOLUTION
 
-    index = InvertedIndex.read_index("/content/body_index", "all_words")  # TODO: Change later to take from bucket
+    # TODO: Change later to take from bucket
+    index = InvertedIndex.read_index("/content/body_index", "all_words")
     pkl_file = "/content/part15_preprocessed.pkl"
     with open(pkl_file, 'rb') as f:
         pages = pickle.load(f)
+    ########################################
+    # pages: list of tuples
+    # Each tuple is a wiki article with id, title, body, and
+    # [(target_article_id, anchor_text), ...].
 
+    df_tfidfvect = []  # [(df_tfidfvect,tfidfvectorizer)]
+    tfidfvectorizer = []
+    i = 0
+    for page in pages:
+        try:
+            df, vector = tf_idf_scores([page[2]])
+            df_tfidfvect.append(df)
+            tfidfvectorizer.append(vector)
+        except ValueError:
+            print(f"ERROR\t\t\tERROR\n\n{pages[i]}\n\nERROR\t\t\tERROR\n\n")
+        #   return jsonify(res)
+        i += 1
+
+    query_vector = [x.transform(tokenizer(query)) for x in tfidfvectorizer]  # Should be tokenized?
+    # cosine_sim_df = cosine_sim_using_sklearn(query,df_tfidfvect)
+    # top_100_docs = top_N_documents(cosine_sim_df,1)
+    # print(top_100_docs)
     # END SOLUTION
+    print("\n\n\t\teyy lmao finito\n\t\talso have a good day <3\n\n")
     return jsonify(res)
 
 
@@ -297,3 +339,22 @@ def cosine_sim_using_sklearn(queries, tfidf):  # From assignment 4.
       Each value in the DataFrame will represent the cosine_similarity between given query and document.
     """
     return cosine_similarity(queries, tfidf)
+
+
+def top_N_documents(df, N):  # From assignment 4.
+    """
+    This function sort and filter the top N docuemnts (by score) for each query.
+
+    Parameters
+    ----------
+    df: DataFrame (queries as rows, documents as columns)
+    N: Integer (how many document to retrieve for each query)
+
+    Returns:
+    ----------
+    top_N: dictionary is the following stracture:
+          key - query id.
+          value - sorted (according to score) list of pairs lengh of N. Eac pair within the list provide the following information (doc id, score)
+    """
+    lines = [sorted(list(enumerate(x)), key=lambda y: y[1], reverse=True)[:N] for x in df]
+    return dict(enumerate(lines))
