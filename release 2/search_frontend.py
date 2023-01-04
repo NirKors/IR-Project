@@ -1,13 +1,16 @@
-from inspect import isdatadescriptor
-import os
-import pickle
 import re
-from collections import Counter
-from pathlib import Path
 
+import nltk
+import pandas as pd
 from flask import Flask, request, jsonify
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+nltk.download('stopwords')
+
 from nltk.corpus import stopwords
 
+import pickle
 from inverted_index_gcp import InvertedIndex
 
 
@@ -88,6 +91,11 @@ def search_body():
         return jsonify(res)
     # BEGIN SOLUTION
 
+    index = InvertedIndex.read_index("/content/body_index", "all_words")  # TODO: Change later to take from bucket
+    pkl_file = "/content/part15_preprocessed.pkl"
+    with open(pkl_file, 'rb') as f:
+        pages = pickle.load(f)
+
     # END SOLUTION
     return jsonify(res)
 
@@ -119,42 +127,26 @@ def search_title():
         return jsonify(res)
     # BEGIN SOLUTION
 
-    # Staff-provided 3 tokenizer
-    english_stopwords = frozenset(stopwords.words('english'))
-    corpus_stopwords = ["category", "references", "also", "external", "links",
-                        "may", "first", "see", "history", "people", "one", "two",
-                        "part", "thumb", "including", "second", "following",
-                        "many", "however", "would", "became"]
-
-    all_stopwords = english_stopwords.union(corpus_stopwords)
-    RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
-    # tokens = [token.group() for token in RE_WORD.finditer(text.lower())]
-
-
-    res = []
-    query = query.split()
-
+    # TODO: Change later to take from bucket
+    index = InvertedIndex.read_index("/content/title_index", "all_words")
     pkl_file = "/content/part15_preprocessed.pkl"
     with open(pkl_file, 'rb') as f:
         pages = pickle.load(f)
+    ########################################
 
-    index = InvertedIndex.read_index("/content/title_index", "all_words")  # TODO: Change later to take from bucket
-
+    newquery = tokenizer(query)
     ids = {}
     for word, pls in index.posting_lists_iter():
-      for qword in query:
-          if qword == word:
-              for one_pls in pls:
-                ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
+        for qword in newquery:
+            if qword == word:
+                for one_pls in pls:
+                    ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
 
     res = []
     for page in pages:
         if page[0] in ids.keys():
             res.append(((page[0], page[1]), ids[page[0]]))
-    # TODO: apply tokenizer, make sure to check if capitalization matters.
-    # print(query)
-    # for x in sorted(res, key=lambda x: x[1], reverse=True):
-    #   print(x)
+
     # END SOLUTION
     return jsonify([x[0] for x in sorted(res, key=lambda x: x[1], reverse=True)])
 
@@ -192,7 +184,7 @@ def search_anchor():
 
 @app.route("/get_pagerank", methods=['POST'])
 def get_pagerank():
-    ''' Returns PageRank values for a list of provided wiki article IDs. 
+    ''' Returns PageRank values for a list of provided wiki article IDs.
 
         Test this by issuing a POST request to a URL like:
           http://YOUR_SERVER_DOMAIN/get_pagerank
@@ -231,7 +223,7 @@ def get_pageview():
     Returns:
     --------
         list of ints:
-          list of page view numbers from August 2021 that correrspond to the 
+          list of page view numbers from August 2021 that correrspond to the
           provided list article IDs.
     '''
     res = []
@@ -247,3 +239,61 @@ def get_pageview():
 if __name__ == '__main__':
     # run the Flask RESTful API, make the server publicly available (host='0.0.0.0') on port 8080
     app.run(host='0.0.0.0', port=8080, debug=True)
+
+
+def tokenizer(text):
+    # Staff-provided 3 tokenizer
+    english_stopwords = frozenset(stopwords.words('english'))
+    corpus_stopwords = ["category", "references", "also", "external", "links",
+                        "may", "first", "see", "history", "people", "one", "two",
+                        "part", "thumb", "including", "second", "following",
+                        "many", "however", "would", "became"]
+
+    all_stopwords = english_stopwords.union(corpus_stopwords)
+    RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
+    tokens = [token.group() for token in RE_WORD.finditer(text.lower())]
+    return tokens
+
+
+def tf_idf_scores(data):  # From assignment 4.
+    """
+    This function calculates the tfidf for each word in a single document utilizing TfidfVectorizer via sklearn.
+
+    Parameters:
+    -----------
+      data: list of strings.
+
+    Returns:
+    --------
+      Two objects as follows:
+                                a) DataFrame, documents as rows (i.e., 0,1,2,3, etc'), terms as columns ('bird','bright', etc').
+                                b) TfidfVectorizer object.
+
+    """
+    vectorizer = TfidfVectorizer(stop_words='english')
+    X = vectorizer.fit_transform(data)
+
+    terms = vectorizer.get_feature_names_out()
+    df = pd.DataFrame(data=X.toarray(), columns=terms)
+
+    return df, vectorizer
+
+
+def cosine_sim_using_sklearn(queries, tfidf):  # From assignment 4.
+    """
+    In this function you need to utilize the cosine_similarity function from sklearn.
+    You need to compute the similarity between the queries and the given documents.
+    This function will return a DataFrame in the following shape: (# of queries, # of documents).
+    Each value in the DataFrame will represent the cosine_similarity between given query and document.
+
+    Parameters:
+    -----------
+      queries: sparse matrix represent the queries after transformation of tfidfvectorizer.
+      documents: sparse matrix represent the documents.
+
+    Returns:
+    --------
+      DataFrame: This function will return a DataFrame in the following shape: (# of queries, # of documents).
+      Each value in the DataFrame will represent the cosine_similarity between given query and document.
+    """
+    return cosine_similarity(queries, tfidf)
