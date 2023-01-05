@@ -124,17 +124,18 @@ def search_body():  # TODO: Can probably improve using stuff like get_candidate_
     beginning = time.time()
     start_time = time.time()
     words, pls = zip(*(index.posting_lists_iter()))
-    print("\nwords, pls = zip(*(index.posting_lists_iter()))\n--- %s seconds ---" % (time.time() - start_time))
-
     tokenized = tokenizer(query)
 
     start_time = time.time()
-    tokenized, candidates = get_candidates(index, words, pls, tokenized)
-
+    tokenized, candidates = get_candidates(words, pls, tokenized, 0)
     start_time = time.time()
     df_tfidfvect, tfidfvectorizer = tf_idf_scores(
         [page[2] for page in pages if page[0] in candidates])  # TODO: Should tokenize body text?
     print("\nNEW\n--- %s seconds ---" % (time.time() - start_time))
+
+    print("\n\n\n")
+    print([page[1] for page in pages if page[0] in candidates])
+    print("\n\n\n")
 
     # start_time = time.time()
     # df_tfidfvect, tfidfvectorizer = tf_idf_scores([page[2] for page in pages])  # TODO: Should tokenize body text?
@@ -378,17 +379,14 @@ def top_N_documents(df, N):  # From assignment 4.
     return dict(enumerate(lines))
 
 
-def get_candidates(index, words, pls, query_to_search, N=50):
+def get_candidates(words, pls, query_to_search, N=50):
     """
-    This function goes over documents and checks for every query token if it appears in words, and counts the number
-    of documents it appears in. This function is used to filter both documents and tokens; filters tokens that
-    appeared in less than N documents.
+    This function goes over documents and checks for every query token if it appears in words, and counts the number of documents it appears in.
+    This function is used to filter both documents and tokens; filters tokens that appeared in less than N documents.
 
     Parameters
     ----------
     query_to_search: list of tokens (str). This list will be preprocessed in advance.
-
-    index: inverted index loaded from the corresponding files.
 
     words,pls: iterator for working with posting.
 
@@ -411,5 +409,6 @@ def get_candidates(index, words, pls, query_to_search, N=50):
         if sum(candidates.values()) >= N:
             filtered_tokens.append(term)
             candidate_list.update([key[0] for key in candidates.keys()])
-
+    print(f"\n\nquery:\t{query_to_search}\t->\t{filtered_tokens}\n")
+    print(f"docids:\n{candidate_list}\n")
     return filtered_tokens, candidate_list
