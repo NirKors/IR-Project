@@ -121,15 +121,24 @@ def search_body():  # TODO: Can probably improve using stuff like get_candidate_
     # Each tuple is a wiki article with id, title, body, and
     # [(target_article_id, anchor_text), ...].
 
-    # words, pls = zip(*(index.posting_lists_iter()))
-    tokenized = tokenizer(query)
-    # get_candidate_documents_and_scores(tokenized, index, words, pls)
-
     beginning = time.time()
     start_time = time.time()
-    df_tfidfvect, tfidfvectorizer = tf_idf_scores([page[2] for page in pages])  # TODO: Should tokenize body text?
-    print("\ndf_tfidfvect, tfidfvectorizer = tf_idf_scores([page[2] for page in pages])\n--- %s seconds ---" % (
-                time.time() - start_time))
+    words, pls = zip(*(index.posting_lists_iter()))
+    print("\nwords, pls = zip(*(index.posting_lists_iter()))\n--- %s seconds ---" % (time.time() - start_time))
+
+    tokenized = tokenizer(query)
+
+    start_time = time.time()
+    tokenized, candidates = get_candidates(index, words, pls, tokenized)
+
+    start_time = time.time()
+    df_tfidfvect, tfidfvectorizer = tf_idf_scores(
+        [page[2] for page in pages if page[0] in candidates])  # TODO: Should tokenize body text?
+    print("\nNEW\n--- %s seconds ---" % (time.time() - start_time))
+
+    # start_time = time.time()
+    # df_tfidfvect, tfidfvectorizer = tf_idf_scores([page[2] for page in pages])  # TODO: Should tokenize body text?
+    # print("\nOLD\n--- %s seconds ---" % (time.time() - start_time))
 
     query_vector = tfidfvectorizer.transform([' '.join(tokenized)])
 
@@ -369,37 +378,38 @@ def top_N_documents(df, N):  # From assignment 4.
     return dict(enumerate(lines))
 
 
-def get_candidate_documents_and_scores(query_to_search, index, words, pls):  # From assignment 4.
+def get_candidates(index, words, pls, query_to_search, N=50):
     """
-    Generate a dictionary representing a pool of candidate documents for a given query. This function will go through every token in query_to_search
-    and fetch the corresponding information (e.g., term frequency, document frequency, etc.') needed to calculate TF-IDF from the posting list.
-    Then it will populate the dictionary 'candidates.'
-    For calculation of IDF, use log with base 10.
-    tf will be normalized based on the length of the document.
+    This function goes over documents and checks for every query token if it appears in words, and counts the number
+    of documents it appears in. This function is used to filter both documents and tokens; filters tokens that
+    appeared in less than N documents.
 
-    Parameters:
-    -----------
-    query_to_search: list of tokens (str). This list will be preprocessed in advance (e.g., lower case, filtering stopwords, etc.').
-                     Example: 'Hello, I love information retrival' --->  ['hello','love','information','retrieval']
+    Parameters
+    ----------
+    query_to_search: list of tokens (str). This list will be preprocessed in advance.
 
-    index:           inverted index loaded from the corresponding files.
+    index: inverted index loaded from the corresponding files.
 
     words,pls: iterator for working with posting.
 
+    N: integer (default: 50)
+
     Returns:
-    -----------
-    dictionary of candidates. In the following format:
-                                                               key: pair (doc_id,term)
-                                                               value: tfidf score.
+    ----------
+    filtered_tokens: Tokens that appeared in more than N documents.
+    candidate_list: Set of doc_id that had a token in filtered_tokens appear in their body text.
     """
+
     candidates = {}
+    filtered_tokens = []
+    candidate_list = set()
     for term in np.unique(query_to_search):
         if term in words:
-            list_of_doc = pls[words.index(term)]
-            normlized_tfidf = [(doc_id, (freq / DL[str(doc_id)]) * math.log(len(DL) / index.df[term], 10)) for
-                               doc_id, freq in list_of_doc]
+            pls_list = pls[words.index(term)]  # TODO: Can improve
+            for v in pls_list:
+                candidates[v] = candidates.get(v, 0) + 1
+        if sum(candidates.values()) >= N:
+            filtered_tokens.append(term)
+            candidate_list.update([key[0] for key in candidates.keys()])
 
-            for doc_id, tfidf in normlized_tfidf:
-                candidates[(doc_id, term)] = candidates.get((doc_id, term), 0) + tfidf
-
-    return candidates
+    return filtered_tokens, candidate_list
