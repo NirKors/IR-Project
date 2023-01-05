@@ -89,7 +89,7 @@ def search():
 
 
 @app.route("/search_body")
-def search_body():
+def search_body():  # TODO: Can probably improve using stuff like get_candidate_documents_and_scores from asg 4
     ''' Returns up to a 100 search results for the query using TFIDF AND COSINE
         SIMILARITY OF THE BODY OF ARTICLES ONLY. DO NOT use stemming. DO USE the
         staff-provided tokenizer from Assignment 3 (GCP part) to do the
@@ -111,7 +111,7 @@ def search_body():
     # BEGIN SOLUTION
 
     # TODO: Change later to take from bucket
-    index = InvertedIndex.read_index("/content/body_index", "all_words")
+    index = InvertedIndex.read_index("/content/body_indices", "all_words")
     pkl_file = "/content/part15_preprocessed.pkl"
     with open(pkl_file, 'rb') as f:
         pages = pickle.load(f)
@@ -120,25 +120,18 @@ def search_body():
     # Each tuple is a wiki article with id, title, body, and
     # [(target_article_id, anchor_text), ...].
 
-    df_tfidfvect = []  # [(df_tfidfvect,tfidfvectorizer)]
-    tfidfvectorizer = []
-    i = 0
-    for page in pages:
-        try:
-            df, vector = tf_idf_scores([page[2]])  # TODO: should be document*S* please fixy
-            df_tfidfvect.append(df)
-            tfidfvectorizer.append(vector)
-        except ValueError:
-            print(f"ERROR\t\t\tERROR\n\n{pages[i]}\n\nERROR\t\t\tERROR\n\n")
-        #   return jsonify(res)
-        i += 1
+    tokenized = tokenizer(query)
+    df_tfidfvect, tfidfvectorizer = tf_idf_scores([page[2] for page in pages])  # TODO: Should tokenize body text?
 
-    query_vector = [x.transform(tokenizer(query)) for x in tfidfvectorizer]  # Should be tokenized?
-    # cosine_sim_df = cosine_sim_using_sklearn(query,df_tfidfvect)
-    # top_100_docs = top_N_documents(cosine_sim_df,1)
-    # print(top_100_docs)
+    query_vector = tfidfvectorizer.transform([' '.join(tokenized)])
+    cosine_sim_df = cosine_sim_using_sklearn(query_vector, df_tfidfvect)
+    top_100_docs = top_N_documents(cosine_sim_df, 100)
+    doc_ids = [x[0] for x in top_100_docs[0] if x[1] > 0]
+
+    for doc_id in doc_ids:
+        res.append((pages[doc_id][0], pages[doc_id][1]))
+
     # END SOLUTION
-    print("\n\n\t\teyy lmao finito\n\t\talso have a good day <3\n\n")
     return jsonify(res)
 
 
@@ -282,17 +275,18 @@ if __name__ == '__main__':
     # run the Flask RESTful API, make the server publicly available (host='0.0.0.0') on port 8080
     app.run(host='0.0.0.0', port=8080, debug=True)
 
+# Staff-provided 3 tokenizer
+english_stopwords = frozenset(stopwords.words('english'))
+corpus_stopwords = ["category", "references", "also", "external", "links",
+                    "may", "first", "see", "history", "people", "one", "two",
+                    "part", "thumb", "including", "second", "following",
+                    "many", "however", "would", "became"]
+
+all_stopwords = english_stopwords.union(corpus_stopwords)
+RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
+
 
 def tokenizer(text):
-    # Staff-provided 3 tokenizer
-    english_stopwords = frozenset(stopwords.words('english'))
-    corpus_stopwords = ["category", "references", "also", "external", "links",
-                        "may", "first", "see", "history", "people", "one", "two",
-                        "part", "thumb", "including", "second", "following",
-                        "many", "however", "would", "became"]
-
-    all_stopwords = english_stopwords.union(corpus_stopwords)
-    RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
     tokens = [token.group() for token in RE_WORD.finditer(text.lower())]
     return tokens
 
@@ -312,7 +306,7 @@ def tf_idf_scores(data):  # From assignment 4.
                                 b) TfidfVectorizer object.
 
     """
-    vectorizer = TfidfVectorizer(stop_words='english')
+    vectorizer = TfidfVectorizer(stop_words=all_stopwords)
     X = vectorizer.fit_transform(data)
 
     terms = vectorizer.get_feature_names_out()
@@ -356,5 +350,6 @@ def top_N_documents(df, N):  # From assignment 4.
           key - query id.
           value - sorted (according to score) list of pairs lengh of N. Eac pair within the list provide the following information (doc id, score)
     """
-    lines = [sorted(list(enumerate(x)), key=lambda y: y[1], reverse=True)[:N] for x in df]
+    lines = [sorted(list(enumerate(x)), key=lambda y: y[1], reverse=True)[:N] for x in
+             df]  # TODO: Make more efficient, we only have on query
     return dict(enumerate(lines))
