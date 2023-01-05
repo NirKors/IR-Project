@@ -31,6 +31,7 @@ from operator import itemgetter
 import pickle
 import matplotlib.pyplot as plt
 from inverted_index_gcp import InvertedIndex
+import time
 
 
 # os.environ["JAVA_HOME"] = "/usr/lib/jvm/java-8-openjdk-amd64"
@@ -120,17 +121,30 @@ def search_body():  # TODO: Can probably improve using stuff like get_candidate_
     # Each tuple is a wiki article with id, title, body, and
     # [(target_article_id, anchor_text), ...].
 
+    # words, pls = zip(*(index.posting_lists_iter()))
     tokenized = tokenizer(query)
+    # get_candidate_documents_and_scores(tokenized, index, words, pls)
+
+    beginning = time.time()
+    start_time = time.time()
     df_tfidfvect, tfidfvectorizer = tf_idf_scores([page[2] for page in pages])  # TODO: Should tokenize body text?
+    print("\ndf_tfidfvect, tfidfvectorizer = tf_idf_scores([page[2] for page in pages])\n--- %s seconds ---" % (
+                time.time() - start_time))
 
     query_vector = tfidfvectorizer.transform([' '.join(tokenized)])
+
+    start_time = time.time()
     cosine_sim_df = cosine_sim_using_sklearn(query_vector, df_tfidfvect)
+    print("cosine_sim_df = cosine_sim_using_sklearn(query_vector,df_tfidfvect)\n--- %s seconds ---" % (
+                time.time() - start_time))
+
     top_100_docs = top_N_documents(cosine_sim_df, 100)
     doc_ids = [x[0] for x in top_100_docs[0] if x[1] > 0]
 
     for doc_id in doc_ids:
         res.append((pages[doc_id][0], pages[doc_id][1]))
 
+    print("Total time:\n--- %s seconds ---" % (time.time() - beginning))
     # END SOLUTION
     return jsonify(res)
 
@@ -353,3 +367,39 @@ def top_N_documents(df, N):  # From assignment 4.
     lines = [sorted(list(enumerate(x)), key=lambda y: y[1], reverse=True)[:N] for x in
              df]  # TODO: Make more efficient, we only have on query
     return dict(enumerate(lines))
+
+
+def get_candidate_documents_and_scores(query_to_search, index, words, pls):  # From assignment 4.
+    """
+    Generate a dictionary representing a pool of candidate documents for a given query. This function will go through every token in query_to_search
+    and fetch the corresponding information (e.g., term frequency, document frequency, etc.') needed to calculate TF-IDF from the posting list.
+    Then it will populate the dictionary 'candidates.'
+    For calculation of IDF, use log with base 10.
+    tf will be normalized based on the length of the document.
+
+    Parameters:
+    -----------
+    query_to_search: list of tokens (str). This list will be preprocessed in advance (e.g., lower case, filtering stopwords, etc.').
+                     Example: 'Hello, I love information retrival' --->  ['hello','love','information','retrieval']
+
+    index:           inverted index loaded from the corresponding files.
+
+    words,pls: iterator for working with posting.
+
+    Returns:
+    -----------
+    dictionary of candidates. In the following format:
+                                                               key: pair (doc_id,term)
+                                                               value: tfidf score.
+    """
+    candidates = {}
+    for term in np.unique(query_to_search):
+        if term in words:
+            list_of_doc = pls[words.index(term)]
+            normlized_tfidf = [(doc_id, (freq / DL[str(doc_id)]) * math.log(len(DL) / index.df[term], 10)) for
+                               doc_id, freq in list_of_doc]
+
+            for doc_id, tfidf in normlized_tfidf:
+                candidates[(doc_id, term)] = candidates.get((doc_id, term), 0) + tfidf
+
+    return candidates
