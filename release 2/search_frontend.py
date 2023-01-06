@@ -90,7 +90,7 @@ def search():
 
 
 @app.route("/search_body")
-def search_body():  # TODO: Can probably improve using stuff like get_candidate_documents_and_scores from asg 4
+def search_body():
     ''' Returns up to a 100 search results for the query using TFIDF AND COSINE
         SIMILARITY OF THE BODY OF ARTICLES ONLY. DO NOT use stemming. DO USE the
         staff-provided tokenizer from Assignment 3 (GCP part) to do the
@@ -121,40 +121,34 @@ def search_body():  # TODO: Can probably improve using stuff like get_candidate_
     # Each tuple is a wiki article with id, title, body, and
     # [(target_article_id, anchor_text), ...].
 
-    beginning = time.time()
-    start_time = time.time()
     words, pls = zip(*(index.posting_lists_iter()))
     tokenized = tokenizer(query)
 
-    start_time = time.time()
-    tokenized, candidates = get_candidates(words, pls, tokenized, 0)
-    start_time = time.time()
+    tokenized, candidates = get_candidates(words, pls, tokenized)
+
+    if len(tokenized) == 0 or len(candidates) == 0:
+        return jsonify(res)
     df_tfidfvect, tfidfvectorizer = tf_idf_scores(
         [page[2] for page in pages if page[0] in candidates])  # TODO: Should tokenize body text?
-    print("\nNEW\n--- %s seconds ---" % (time.time() - start_time))
-
-    print("\n\n\n")
-    print([page[1] for page in pages if page[0] in candidates])
-    print("\n\n\n")
-
-    # start_time = time.time()
-    # df_tfidfvect, tfidfvectorizer = tf_idf_scores([page[2] for page in pages])  # TODO: Should tokenize body text?
-    # print("\nOLD\n--- %s seconds ---" % (time.time() - start_time))
 
     query_vector = tfidfvectorizer.transform([' '.join(tokenized)])
 
-    start_time = time.time()
     cosine_sim_df = cosine_sim_using_sklearn(query_vector, df_tfidfvect)
-    print("cosine_sim_df = cosine_sim_using_sklearn(query_vector,df_tfidfvect)\n--- %s seconds ---" % (
-                time.time() - start_time))
 
     top_100_docs = top_N_documents(cosine_sim_df, 100)
-    doc_ids = [x[0] for x in top_100_docs[0] if x[1] > 0]
+    doc_ids = [x[0] for x in top_100_docs[0]];
 
-    for doc_id in doc_ids:
-        res.append((pages[doc_id][0], pages[doc_id][1]))
+    ordered_actual_ids = [[candidate for candidate in candidates][doc_id] for doc_id in doc_ids]
 
-    print("Total time:\n--- %s seconds ---" % (time.time() - beginning))
+    temp = {}
+    candidates = list(candidates)
+    for page in pages:
+        if page[0] in ordered_actual_ids:
+            temp[candidates.index(page[0])] = (page[0], page[1])
+
+    index_map = {v: i for i, v in enumerate(doc_ids)}
+    res = [x[1] for x in sorted(temp.items(), key=lambda pair: index_map[pair[0]])]
+
     # END SOLUTION
     return jsonify(res)
 
@@ -201,7 +195,6 @@ def search_title():
                 for one_pls in pls:
                     ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
 
-    res = []
     for page in pages:
         if page[0] in ids.keys():
             res.append(((page[0], page[1]), ids[page[0]]))
@@ -373,7 +366,7 @@ def top_N_documents(df, N):  # From assignment 4.
     top_N: dictionary is the following stracture:
           key - query id.
           value - sorted (according to score) list of pairs lengh of N. Eac pair within the list provide the following information (doc id, score)
-    """
+    """;
     lines = [sorted(list(enumerate(x)), key=lambda y: y[1], reverse=True)[:N] for x in
              df]  # TODO: Make more efficient, we only have on query
     return dict(enumerate(lines))
@@ -409,6 +402,4 @@ def get_candidates(words, pls, query_to_search, N=50):
         if sum(candidates.values()) >= N:
             filtered_tokens.append(term)
             candidate_list.update([key[0] for key in candidates.keys()])
-    print(f"\n\nquery:\t{query_to_search}\t->\t{filtered_tokens}\n")
-    print(f"docids:\n{candidate_list}\n")
     return filtered_tokens, candidate_list
