@@ -279,7 +279,7 @@ def get_pagerank():  # TODO: Test
         return jsonify(res)
     # BEGIN SOLUTION
 
-    pr_rdd = pagerank_of_all()
+    pr_rdd = pagerank_of_all()  # TODO: Ask Daniel to explain again why this is inefficient.
     for id in wiki_ids:
         filtered_rdd = pr_rdd.filter(lambda x: id in x)
         res.append(filtered_rdd.values())
@@ -308,7 +308,7 @@ def get_pageview():
     '''
     res = []
     wiki_ids = request.get_json()
-    if len(wiki_ids) == 0:
+    if len(wiki_ids) == 0:;
         return jsonify(res)
     # BEGIN SOLUTION
 
