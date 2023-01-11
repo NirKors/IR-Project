@@ -60,6 +60,9 @@ class MyFlaskApp(Flask):
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 
+wiki_id_2_pageview = None
+with open("./pr/pageviews-202108-user.pkl", 'rb') as f:
+    wiki_id_2_pageview = pickle.loads(f.read())
 
 @app.route("/search")
 def search():
@@ -311,7 +314,8 @@ def get_pageview():
     if len(wiki_ids) == 0:;
         return jsonify(res)
     # BEGIN SOLUTION
-
+    for id in wiki_ids:
+        res.append(wiki_id_2_pageview.get(id,0))
     # END SOLUTION
     return jsonify(res)
 
@@ -439,6 +443,7 @@ def pagerank_of_all():
     rdd of id,pagerank
     """
     # We will start by making an RDD similar to what was in assignment 3
+    # TODO: in the gcp, make it so it will be all the stuff, not just the certain pkl file
     pkl_file = "/content/part15_preprocessed.pkl"
     with open(pkl_file, 'rb') as f:
         pgs = pickle.load(f)
