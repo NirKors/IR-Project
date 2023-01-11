@@ -32,7 +32,7 @@ import pickle
 import matplotlib.pyplot as plt
 from inverted_index_gcp import InvertedIndex
 import time
-
+import glob
 
 # os.environ["JAVA_HOME"] = "/usr/lib/jvm/java-8-openjdk-amd64"
 # graphframes_jar = 'https://repos.spark-packages.org/graphframes/graphframes/0.8.2-spark3.2-s_2.12/graphframes-0.8.2-spark3.2-s_2.12.jar'
@@ -60,6 +60,14 @@ class MyFlaskApp(Flask):
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 
+index_body = InvertedIndex.read_index("/content/body_indices", "all_words")
+index_title = InvertedIndex.read_index("/content/title_index", "all_words")
+index_anchor = InvertedIndex.read_index("/content/anchor_index", "all_words")
+
+
+files = glob.glob("*.parquet")
+with open(*files, 'rb') as f:
+    pages = pickle.load(f)
 
 @app.route("/search")
 def search():
@@ -111,17 +119,7 @@ def search_body():
         return jsonify(res)
     # BEGIN SOLUTION
 
-    # TODO: Change later to take from bucket
-    index = InvertedIndex.read_index("/content/body_indices", "all_words")
-    pkl_file = "/content/part15_preprocessed.pkl"
-    with open(pkl_file, 'rb') as f:
-        pages = pickle.load(f)
-    ########################################
-    # pages: list of tuples
-    # Each tuple is a wiki article with id, title, body, and
-    # [(target_article_id, anchor_text), ...].
-
-    words, pls = zip(*(index.posting_lists_iter()))
+    words, pls = zip(*(index_body.posting_lists_iter()))
     tokenized = tokenizer(query)
 
     tokenized, candidates = get_candidates(words, pls, tokenized)
@@ -180,16 +178,9 @@ def search_title():
         return jsonify(res)
     # BEGIN SOLUTION
 
-    # TODO: Change later to take from bucket
-    index = InvertedIndex.read_index("/content/title_index", "all_words")
-    pkl_file = "/content/part15_preprocessed.pkl"
-    with open(pkl_file, 'rb') as f:
-        pages = pickle.load(f)
-    ########################################
-
     newquery = tokenizer(query)
     ids = {}
-    for word, pls in index.posting_lists_iter():
+    for word, pls in index_title.posting_lists_iter():
         for qword in newquery:
             if qword == word:
                 for one_pls in pls:
@@ -231,18 +222,8 @@ def search_anchor():
         return jsonify(res)
     # BEGIN SOLUTION
 
-    # TODO: Change later to take from bucket
-    index = InvertedIndex.read_index("/content/anchor_index", "all_words")
-    pkl_file = "/content/part15_preprocessed.pkl"
-    with open(pkl_file, 'rb') as f:
-        pages = pickle.load(f)
-    ########################################
-    # pages: list of tuples
-    # Each tuple is a wiki article with id, title, body, and
-    # [(target_article_id, anchor_text), ...].
-
     ids = {}
-    for word, pls in index.posting_lists_iter():
+    for word, pls in index_anchor.posting_lists_iter():
         for qword in query:
             if qword == word:
                 for one_pls in pls:
@@ -308,7 +289,7 @@ def get_pageview():
     '''
     res = []
     wiki_ids = request.get_json()
-    if len(wiki_ids) == 0:;
+    if len(wiki_ids) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
 
@@ -394,7 +375,7 @@ def top_N_documents(df, N):  # From assignment 4.
     top_N: dictionary is the following stracture:
           key - query id.
           value - sorted (according to score) list of pairs lengh of N. Eac pair within the list provide the following information (doc id, score)
-    """;
+    """
     lines = [sorted(list(enumerate(x)), key=lambda y: y[1], reverse=True)[:N] for x in
              df]  # TODO: Make more efficient, we only have on query
     return dict(enumerate(lines))
