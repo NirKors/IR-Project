@@ -88,10 +88,84 @@ def search():
         element is a tuple (wiki_id, title).
     '''
     res = []
+    extended_stopwords = ['ok', 'their', 'before', 'are', 'now', 'until', 's', 'during', 'between', 'not', 'maybe', 'an', 'any', 'each', 'can', 'by', 'that', 'from', 'myself', 'than', 'also', 'off', 'these', 'they', 'am', 'no', 'will', 'yourself', 'do', 'against', 'out', 'him', 'your', 'whereas', 'once', 'have', 'were', 'down', 'its', 'been', 'after', 'could', 'was', 'what', 'doing', 'under', 'when', 'only', 'herself', 'always', 'be', 'mine', 'about', 'those', 'ourselves', 'our', 'itself', 'then', 'yours', 'in', 'most', 'having', 'we', 'her', 'whose', 'this', 'all', 'themselves', 'again', 'his', 'yet', 'further', 'become', 'whoever', 'of', 'neither', 'almost', 'else', 'them', 'whether', 't', 'although', 'the', 'why', 'to', 'he', 'yes', 'there', 'both', 'so', 'my', 'at', 'had', 'is', 'other', 'below', 'without', 'too', 'actually', 'hence', 'it', 'don', 'while', 'wherever', 'she', 'should', 'such', 'above', 'and', 'some', 'because', 'but', 'would', 'himself', 'with', 'own', 'became', 'on', 'might', 'how', 'few', 'as', 'does', 'may', 'through', 'which', 'very', 'into', 'just', 'a', 'over', 'theirs', 'ours', 'whenever', 'nor', 'here', 'did', 'if', 'up', 'must', 'within', 'for', 'me', 'has', 'where', 'whom', 'who', 'either', 'yourselves', 'you', 'more', 'or', 'being', 'same', 'oh', 'hers', 'i']
     query = request.args.get('query', '')
     if len(query) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
+    originalquery = tokenizer(query)
+
+    ########################### TITLE ###########################
+    query = originalquery
+    ids = {}
+    for word, pls in index_title.posting_lists_iter():
+        for qword in query:
+            if qword == word:
+                for one_pls in pls:
+                    ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
+    titles = ids
+    ########################### BODY ###########################
+    words, pls = zip(*(index_body.posting_lists_iter()))
+    query = [token for token in originalquery if token.lower() not in extended_stopwords]
+    query, candidates = get_candidates(words, pls, query)
+    if len(query) == 0 or len(candidates) == 0:
+        body = []
+    else:
+      df_tfidfvect, tfidfvectorizer = tf_idf_scores(
+          [page[2] for page in pages if page[0] in candidates])
+      query_vector = tfidfvectorizer.transform([' '.join(query)])
+
+      cosine_sim_df = cosine_sim_using_sklearn(query_vector, df_tfidfvect)
+
+      top_100_docs = top_N_documents(cosine_sim_df, 100)
+
+      doc_ids = [x[0] for x in top_100_docs[0]];
+
+      body = [([candidate for candidate in candidates][doc_id], weight) for doc_id, weight in top_100_docs[0]]
+      body = [b for b in body if b[1] > 0]
+
+    ########################### ANCHOR ###########################
+    query = originalquery
+    res = []
+    if len(query) == 0:
+        return jsonify(res)
+
+    ids = {}
+    for word, pls in index_anchor.posting_lists_iter():
+        for qword in query:
+            if qword == word:
+                for one_pls in pls:
+                    ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
+
+    anchors = ids
+    ###########################***********###########################
+    print(f"*************************\n\nTokenized query:\t{query}\n"
+          f"Extended tokenized query:\t{[token for token in query if token.lower() not in extended_stopwords]}\n\n"
+          f"titles:\n\t{titles}\n\n"
+          f"body:\n\t{body}\n\n"
+          f"anchors:\n\t{anchors}\n\n")
+    w_title = 0.5
+    w_body = 0.3
+    w_anchor = 0.2
+    weighted = {}
+    for id, num in titles.items():
+      weighted[id] = weighted.get(id, 0) + num * w_title
+
+    for id, num in body:
+      weighted[id] = weighted.get(id, 0) + num * w_body
+    temp = [x[1] for x in body]
+    norm = [(float(i)/max(temp)+1)/2 for i in temp]  # Refine later for usage.
+
+    for id, num in anchors.items():
+      weighted[id] = weighted.get(id, 0) + num * w_anchor
+
+    weighted = dict(sorted(weighted.items(), key=lambda item: item[1], reverse=True))
+
+    for page in pages:
+      if page[0] in weighted.keys():
+          res.append(((page[0], page[1]), weighted[page[0]]))
+    print([x for x in sorted(res, key=lambda x: x[1], reverse=True)][:100])
+    res = [x[0] for x in sorted(res, key=lambda x: x[1], reverse=True)][:100]
 
     # END SOLUTION
     return jsonify(res)
@@ -231,7 +305,6 @@ def search_anchor():
     for page in pages:
         if page[0] in ids.keys():
             res.append(((page[0], page[1]), ids[page[0]]))
-    print(res)
     res = [x[0] for x in sorted(res, key=lambda x: x[1], reverse=True)]
 
     # END SOLUTION
