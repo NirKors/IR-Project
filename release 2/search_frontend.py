@@ -63,6 +63,12 @@ files = glob.glob("*.parquet")
 with open(*files, 'rb') as f:
     pages = pickle.load(f)
 
+# TODO: Enable once we have the file.
+# wiki_id_2_pageview = None
+# with open(f"{path}/pr/pageviews-202108-user.pkl", 'rb') as f:
+#     wiki_id_2_pageview = pickle.loads(f.read())
+
+
 @app.route("/search")
 def search():
     ''' Returns up to a 100 of your best search results for the query. This is
@@ -328,7 +334,9 @@ def get_pagerank():  # TODO: Test
     # BEGIN SOLUTION
 
     pr = pr_results.vertices.select("id", "pagerank")
-    pr = pr.sort(col('pagerank').desc())
+    for id in wiki_ids:
+        filtered_rdd = pr.filter(lambda x: id in x)
+        res.append(filtered_rdd.values().collect())
 
     # END SOLUTION
     return jsonify(res)
@@ -477,30 +485,3 @@ def get_candidates(words, pls, query_to_search, N=50):
             filtered_tokens.append(term)
             candidate_list.update([key[0] for key in candidates.keys()])
     return filtered_tokens, candidate_list
-
-
-def pagerank_of_all():
-    """ Returns the pagerank of all the ids
-    :return:
-    rdd of id,pagerank
-    """
-    # We will start by making an RDD similar to what was in assignment 3
-    pkl_file = "/content/part15_preprocessed.pkl"
-    with open(pkl_file, 'rb') as f:
-        pgs = pickle.load(f)
-
-    # Now we will only take the important part, which is our id/anchor_text
-    list_for_rdd = []
-    for pg in pgs:
-        list_for_rdd += pg[3]
-
-    pages = sc.parallelize(list_for_rdd)
-    edges = pages.flatMap(lambda x: ([(x[0], row[0]) for row in x[1]])).distinct()
-    vertices = edges.flatMap(lambda x: (Row(x[0]), Row(x[1]))).distinct()
-    edgesDF = edges.toDF(['src', 'dst']).repartition(4, 'src')
-    verticesDF = vertices.toDF(['id']).repartition(4, 'id')
-    g = GraphFrame(verticesDF, edgesDF)
-    pr_results = g.pageRank(resetProbability=0.15, maxIter=10)
-    pr = pr_results.vertices.select("id", "pagerank")
-    pr.repartition(1).write.csv('pr', compression="gzip")
-    return pr
