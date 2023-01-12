@@ -1,19 +1,9 @@
-from inspect import isdatadescriptor
-import os
-import pickle
-import re
-from collections import Counter
-from pathlib import Path
-
 from flask import Flask, request, jsonify
-from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import TfidfVectorizer
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
-from collections import defaultdict, Counter
 import re
 import nltk
-import pickle
 import numpy as np
 
 nltk.download('stopwords')
@@ -64,10 +54,12 @@ index_body = InvertedIndex.read_index("/content/body_indices", "all_words")
 index_title = InvertedIndex.read_index("/content/title_index", "all_words")
 index_anchor = InvertedIndex.read_index("/content/anchor_index", "all_words")
 
-
 files = glob.glob("*.parquet")
 with open(*files, 'rb') as f:
     pages = pickle.load(f)
+
+files = glob.glob("/pr/*.zp")
+pr_results = pd.read_csv(*files)
 
 @app.route("/search")
 def search():
@@ -333,10 +325,8 @@ def get_pagerank():  # TODO: Test
         return jsonify(res)
     # BEGIN SOLUTION
 
-    pr_rdd = pagerank_of_all()  # TODO: Ask Daniel to explain again why this is inefficient.
-    for id in wiki_ids:
-        filtered_rdd = pr_rdd.filter(lambda x: id in x)
-        res.append(filtered_rdd.values())
+    pr = pr_results.vertices.select("id", "pagerank")
+    pr = pr.sort(col('pagerank').desc())
 
     # END SOLUTION
     return jsonify(res)
