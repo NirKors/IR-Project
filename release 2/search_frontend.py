@@ -50,16 +50,18 @@ class MyFlaskApp(Flask):
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 
-index_body = InvertedIndex.read_index("/content/body_indices", "all_words")
-index_title = InvertedIndex.read_index("/content/title_index", "all_words")
-index_anchor = InvertedIndex.read_index("/content/anchor_index", "all_words")
+bucket_name = "training_index"
+path = f"gs://{bucket_name}"
+index_body = InvertedIndex.read_index(f"{path}/body_indices", "all_words")
+index_title = InvertedIndex.read_index(f"{path}/title_index", "all_words")
+index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "all_words")
+
+files = glob.glob(f"{path}/pr/*.zp")
+pr_results = pd.read_csv(*files)
 
 files = glob.glob("*.parquet")
 with open(*files, 'rb') as f:
     pages = pickle.load(f)
-
-files = glob.glob("/pr/*.zp")
-pr_results = pd.read_csv(*files)
 
 @app.route("/search")
 def search():
