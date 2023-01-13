@@ -34,7 +34,7 @@ bucket_name = "training_index"
 path = "/home/nirkor"
 index_body = InvertedIndex.read_index(f"{path}/body_indices", "all_words")
 index_title = InvertedIndex.read_index(f"{path}/title_index", "all_words")
-index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "all_words")
+#index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "all_words")
 
 files = glob.glob(f"{path}/pr/*.zp")
 pr_results = pd.read_csv(*files)

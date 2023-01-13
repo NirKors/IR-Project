@@ -13,7 +13,7 @@ import pickle
 from google.cloud import storage
 from collections import defaultdict
 from contextlib import closing
-
+import os
 
 # Let's start with a small block size of 30 bytes just to test things out.
 BLOCK_SIZE = 1999998
@@ -67,14 +67,22 @@ class MultiFileReader:
     def __init__(self):
         self._open_files = {}
 
-    def read(self, locs, n_bytes, name):
+    def read(self, locs, n_bytes, name):        
         name = f"{name}/"
         b = []
         if not isinstance(locs, list):
             locs = [locs]
         for f_name, offset in locs:
+        
+            print(f"File name:\t{f_name}\nFiles:\n{self._open_files}\n\n")
+            
             if f_name not in self._open_files:
+                
+                print(f"Trying to perform 'open({name}{f_name}'")
+                
                 self._open_files[f_name] = open(f"{name}{f_name}", 'rb')
+                print(self._open_files)
+                
             f = self._open_files[f_name]
             f.seek(offset)
             n_read = min(n_bytes, BLOCK_SIZE - offset)
@@ -163,6 +171,7 @@ class InvertedIndex:
         with closing(MultiFileReader()) as reader:
 
             for w, locs in self.posting_locs.items():
+                print(f"Word:\t{w}\n")
                 b = reader.read(locs[0], self.df[w] * TUPLE_SIZE, self.iname)
                 posting_list = []
                 for i in range(self.df[w]):

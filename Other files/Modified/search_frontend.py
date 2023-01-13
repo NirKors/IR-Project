@@ -29,8 +29,14 @@ path = "/home/nirkor"
 
 index_body = InvertedIndex.read_index(f"{path}/body_indices", "index")
 index_title = InvertedIndex.read_index(f"{path}/title_index", "index")
-index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "index")
+#index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "index")
 
+
+print(f"shit: {index_title.df}\n"
+      f"len(index_title.posting_locs): {len(index_title.posting_locs)}\n")
+print("******************************")
+print(sum([1 if x in index_title.df else 0 for x in index_title.posting_locs ]))
+print("******************************")
 
 
 files = glob.glob(f"{path}/pr/*.gz")
