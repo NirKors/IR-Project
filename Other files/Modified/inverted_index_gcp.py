@@ -17,7 +17,7 @@ import os
 
 # Let's start with a small block size of 30 bytes just to test things out.
 BLOCK_SIZE = 1999998
-location_name = "body_indices"
+location_name = "anchor_index"
 
 
 class MultiFileWriter:
@@ -72,14 +72,8 @@ class MultiFileReader:
         b = []
         if not isinstance(locs, list):
             locs = [locs]
-        for f_name, offset in locs:
-        
-            print(f"File name:\t{f_name}\nFiles:\n{self._open_files}\n\n")
-            
+        for f_name, offset in locs:                  
             if f_name not in self._open_files:
-                
-                print(f"Trying to perform 'open({name}{f_name}'")
-                
                 self._open_files[f_name] = open(f"{name}{f_name}", 'rb')
                 print(self._open_files)
                 
@@ -188,7 +182,7 @@ class InvertedIndex:
     @staticmethod
     def delete_index(base_dir, name):
         path_globals = Path(base_dir) / f'{name}.pkl'
-        path_globals.unlink()
+        path_globals.unlink();
         for p in Path(base_dir).rglob(f'{name}_*.bin'):
             p.unlink()
 
@@ -207,6 +201,7 @@ class InvertedIndex:
                 locs = writer.write(b)
                 # save file locations to index
                 posting_locs[w].extend(locs)
+            writer._f.close()
             writer.upload_to_gcp()
             InvertedIndex._upload_posting_locs(bucket_id, posting_locs, bucket_name)
         return bucket_id
