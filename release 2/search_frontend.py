@@ -50,6 +50,37 @@ class MyFlaskApp(Flask):
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 
+
+########
+
+path = "/home/nirkor"
+index_body = InvertedIndex.read_index(f"{path}/body_indices", "index")
+index_title = InvertedIndex.read_index(f"{path}/title_index", "index")
+index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "index")
+
+files = glob.glob(f"{path}/pr/*.gz")
+pr_results = pd.read_csv(*files)
+
+print("test")
+paths = "/content/part15_preprocessed.pkl"
+parquetFile = spark.read.parquet(*paths)
+print("test")
+
+doc_text_pairs = parquetFile.select("text", "id").rdd
+pages = parquetFile.select("id", ("title", "text")).rdd
+pages.mapValues(lambda x: x[0], len(tokenizer(x[1])))
+print("test")
+
+
+# TODO: Enable once we have the file.
+# wiki_id_2_pageview = None
+# with open(f"{path}/pr/pageviews-202108-user.pkl", 'rb') as f:
+#     wiki_id_2_pageview = pickle.loads(f.read())
+
+########
+
+
+
 bucket_name = "training_index"
 path = f"gs://{bucket_name}"
 index_body = InvertedIndex.read_index(f"{path}/body_indices", "all_words")
@@ -67,6 +98,33 @@ with open(*files, 'rb') as f:
 # wiki_id_2_pageview = None
 # with open(f"{path}/pr/pageviews-202108-user.pkl", 'rb') as f:
 #     wiki_id_2_pageview = pickle.loads(f.read())
+
+
+
+doc_text_pairs = parquetFile.select("text", "id").rdd
+pages = parquetFile.select("id", ("title", "text")).rdd
+pages.mapValues(lambda x: x[0], len(tokenizer(x[1])))
+pages = pages.collectAsMap()
+
+
+
+
+
+def tokenize_text(text):
+    english_stopwords = frozenset(stopwords.words('english'))
+    corpus_stopwords = ["category", "references", "also", "external", "links",
+                        "may", "first", "see", "history", "people", "one", "two",
+                        "part", "thumb", "including", "second", "following",
+                        "many", "however", "would", "became"]
+
+    all_stopwords = english_stopwords.union(corpus_stopwords)
+    return [token.group() for token in RE_WORD.finditer(text.lower()) if token.group() not in all_stopwords]
+
+
+
+
+
+
 
 
 @app.route("/search")
