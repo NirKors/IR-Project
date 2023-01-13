@@ -1,45 +1,20 @@
-from flask import Flask, request, jsonify
-from sklearn.feature_extraction.text import TfidfVectorizer
-import pandas as pd
-from sklearn.metrics.pairwise import cosine_similarity
 import re
+
 import nltk
 import numpy as np
+import pandas as pd
+from flask import Flask, request, jsonify
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 nltk.download('stopwords')
 
 from nltk.corpus import stopwords
-from tqdm import tqdm
-import operator
-from itertools import islice, count
-from contextlib import closing
 
-import json
-from io import StringIO
-from pathlib import Path
-from operator import itemgetter
 import pickle
-import matplotlib.pyplot as plt
 from inverted_index_gcp import InvertedIndex
-import time
 import glob
 
-# os.environ["JAVA_HOME"] = "/usr/lib/jvm/java-8-openjdk-amd64"
-# graphframes_jar = 'https://repos.spark-packages.org/graphframes/graphframes/0.8.2-spark3.2-s_2.12/graphframes-0.8.2-spark3.2-s_2.12.jar'
-# spark_jars = '/usr/local/lib/python3.7/dist-packages/pyspark/jars'
-# !wget -N -P $spark_jars $graphframes_jar
-# import pyspark
-# from pyspark.sql import *
-# from pyspark import SparkConf
-
-# # Initializing spark context
-# # create a spark context and session
-# conf = SparkConf().set("spark.ui.port", "4050")
-# conf.set("spark.jars.packages", "graphframes:graphframes:0.8.2-spark3.2-s_2.12")
-# sc = pyspark.SparkContext(conf=conf)
-# sc.addPyFile(str(Path(spark_jars) / Path(graphframes_jar).name))
-# spark = SparkSession.builder.getOrCreate()
-# spark
 
 
 class MyFlaskApp(Flask):
@@ -51,38 +26,12 @@ app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 
 
-########
 
-path = "/home/nirkor"
-index_body = InvertedIndex.read_index(f"{path}/body_indices", "index")
-index_title = InvertedIndex.read_index(f"{path}/title_index", "index")
-index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "index")
-
-files = glob.glob(f"{path}/pr/*.gz")
-pr_results = pd.read_csv(*files)
-
-print("test")
-paths = "/content/part15_preprocessed.pkl"
-parquetFile = spark.read.parquet(*paths)
-print("test")
-
-doc_text_pairs = parquetFile.select("text", "id").rdd
-pages = parquetFile.select("id", ("title", "text")).rdd
-pages.mapValues(lambda x: x[0], len(tokenizer(x[1])))
-print("test")
-
-
-# TODO: Enable once we have the file.
-# wiki_id_2_pageview = None
-# with open(f"{path}/pr/pageviews-202108-user.pkl", 'rb') as f:
-#     wiki_id_2_pageview = pickle.loads(f.read())
-
-########
 
 
 
 bucket_name = "training_index"
-path = f"gs://{bucket_name}"
+path = "/home/nirkor"
 index_body = InvertedIndex.read_index(f"{path}/body_indices", "all_words")
 index_title = InvertedIndex.read_index(f"{path}/title_index", "all_words")
 index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "all_words")
@@ -90,23 +39,16 @@ index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "all_words")
 files = glob.glob(f"{path}/pr/*.zp")
 pr_results = pd.read_csv(*files)
 
-files = glob.glob("*.parquet")
+files = glob.glob(f"{path}/processed/*.pickle")
 with open(*files, 'rb') as f:
     pages = pickle.load(f)
 
+print("test")
+print(pages)
 # TODO: Enable once we have the file.
 # wiki_id_2_pageview = None
 # with open(f"{path}/pr/pageviews-202108-user.pkl", 'rb') as f:
 #     wiki_id_2_pageview = pickle.loads(f.read())
-
-
-
-doc_text_pairs = parquetFile.select("text", "id").rdd
-pages = parquetFile.select("id", ("title", "text")).rdd
-pages.mapValues(lambda x: x[0], len(tokenizer(x[1])))
-pages = pages.collectAsMap()
-
-
 
 
 
@@ -318,9 +260,10 @@ def search_title():
                 for one_pls in pls:
                     ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
 
-    for page in pages:
-        if page[0] in ids.keys():
-            res.append(((page[0], page[1]), ids[page[0]]))
+    for id in ids.keys():
+        id_in_pages = pages.get(id)
+        if id_in_pages:
+            res.append(((id, pages[id][0]), ids[id]))
     res = [x[0] for x in sorted(res, key=lambda x: x[1], reverse=True)]
     # END SOLUTION
     return jsonify(res)
@@ -360,9 +303,10 @@ def search_anchor():
             if qword == word:
                 for one_pls in pls:
                     ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
-    for page in pages:
-        if page[0] in ids.keys():
-            res.append(((page[0], page[1]), ids[page[0]]))
+    for id in ids.keys():
+        id_in_pages = pages.get(id)
+        if id_in_pages:
+            res.append(((id, pages[id][0]), ids[id]))
     res = [x[0] for x in sorted(res, key=lambda x: x[1], reverse=True)]
 
     # END SOLUTION
