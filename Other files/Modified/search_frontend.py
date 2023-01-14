@@ -42,7 +42,7 @@ print("******************************")
 files = glob.glob(f"{path}/pr/*.gz")
 pr_results = pd.read_csv(*files)
 
-files = glob.glob(f"{path}/processed/processed.pkl")
+files = glob.glob(f"{path}/processed/processed.pickle")
 with open(*files, 'rb') as f:
     pages = pickle.load(f)
 
