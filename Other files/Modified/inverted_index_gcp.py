@@ -75,8 +75,7 @@ class MultiFileReader:
         for f_name, offset in locs:                  
             if f_name not in self._open_files:
                 self._open_files[f_name] = open(f"{name}{f_name}", 'rb')
-                print(self._open_files)
-                
+
             f = self._open_files[f_name]
             f.seek(offset)
             n_read = min(n_bytes, BLOCK_SIZE - offset)
@@ -165,7 +164,6 @@ class InvertedIndex:
         with closing(MultiFileReader()) as reader:
 
             for w, locs in self.posting_locs.items():
-                print(f"Word:\t{w}\n")
                 b = reader.read(locs[0], self.df[w] * TUPLE_SIZE, self.iname)
                 posting_list = []
                 for i in range(self.df[w]):

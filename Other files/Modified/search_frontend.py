@@ -27,16 +27,9 @@ bucket_name = "training_index"
 path = "/home/nirkor"
 
 
-index_body = InvertedIndex.read_index(f"{path}/body_indices", "index")
+index_body = InvertedIndex.read_index(f"{path}/body_index", "index")
 index_title = InvertedIndex.read_index(f"{path}/title_index", "index")
-#index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "index")
-
-
-print(f"shit: {index_title.df}\n"
-      f"len(index_title.posting_locs): {len(index_title.posting_locs)}\n")
-print("******************************")
-print(sum([1 if x in index_title.df else 0 for x in index_title.posting_locs ]))
-print("******************************")
+index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "index")
 
 
 files = glob.glob(f"{path}/pr/*.gz")
@@ -134,11 +127,6 @@ def search():
 
     anchors = ids
     ###########################***********###########################
-    print(f"*************************\n\nTokenized query:\t{query}\n"
-          f"Extended tokenized query:\t{[token for token in query if token.lower() not in extended_stopwords]}\n\n"
-          f"titles:\n\t{titles}\n\n"
-          f"body:\n\t{body}\n\n"
-          f"anchors:\n\t{anchors}\n\n")
 
     w_title = 0.5
     w_body = 0.3
@@ -160,7 +148,6 @@ def search():
     for page in pages:
       if page[0] in weighted.keys():
           res.append(((page[0], page[1]), weighted[page[0]]))
-    print([x for x in sorted(res, key=lambda x: x[1], reverse=True)][:100])
     res = [x[0] for x in sorted(res, key=lambda x: x[1], reverse=True)][:100]
 
     # END SOLUTION
@@ -251,11 +238,13 @@ def search_title():
     newquery = tokenizer(query)
     ids = {}
     for word, pls in index_title.posting_lists_iter():
+        print(f"Searching\t\"{word}\"\n")
         for qword in newquery:
             if qword == word:
                 for one_pls in pls:
-                    ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
+                    ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_appearances}
 
+    print(pages[0])
     for id in ids.keys():
         id_in_pages = pages.get(id)
         if id_in_pages:
