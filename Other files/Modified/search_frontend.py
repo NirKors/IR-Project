@@ -1,4 +1,6 @@
+import math
 import re
+from collections import Counter
 
 import nltk
 import numpy as np
@@ -37,12 +39,17 @@ pr_results = pd.read_csv(*files)
 
 files = glob.glob(f"{path}/processed/processed.pickle")
 with open(*files, 'rb') as f:
-    pages = pickle.load(f)
+    pages = pickle.load(f)  # id: (title, len(text), count(most_frequent_term))
+
+pages_len = len(pages)
+d_avg = sum([page[1][1] for page in pages]) / pages_len  #TODO: Fix
+# test = dict(zip(*(index_body.posting_lists_iter())))
 
 # TODO: Enable once we have the file.
 # wiki_id_2_pageview = None
 # with open(f"{path}/pr/pageviews-202108-user.pkl", 'rb') as f:
 #     wiki_id_2_pageview = pickle.loads(f.read())
+
 
 
 
@@ -56,6 +63,28 @@ def tokenize_text(text):
     all_stopwords = english_stopwords.union(corpus_stopwords)
     return [token.group() for token in RE_WORD.finditer(text.lower()) if token.group() not in all_stopwords]
 
+
+def BM25(doc_id, query):
+
+    tfij = 0
+    dfj = 0
+
+
+
+    b = 0
+    k1 = 0
+    k3 = 0
+
+    djsize = pages[doc_id][1]
+    N = pages_len
+    BM25 = 0
+    B = 1 - b + b * (djsize / d_avg)
+    for term in query:
+        tfij = 0
+        tfiq = 0
+
+        BM25 += ((k1 + 1) * tfij)/(B*k1+tfij) * math.log((N + 1)/dfj, 10) * ((k3 + 1) / tfiq / (k3 + tfiq))
+    return BM25
 
 @app.route("/search")
 def search():
@@ -75,84 +104,20 @@ def search():
         list of up to 100 search results, ordered from best to worst where each
         element is a tuple (wiki_id, title).
     '''
+
     res = []
     extended_stopwords = ['ok', 'their', 'before', 'are', 'now', 'until', 's', 'during', 'between', 'not', 'maybe', 'an', 'any', 'each', 'can', 'by', 'that', 'from', 'myself', 'than', 'also', 'off', 'these', 'they', 'am', 'no', 'will', 'yourself', 'do', 'against', 'out', 'him', 'your', 'whereas', 'once', 'have', 'were', 'down', 'its', 'been', 'after', 'could', 'was', 'what', 'doing', 'under', 'when', 'only', 'herself', 'always', 'be', 'mine', 'about', 'those', 'ourselves', 'our', 'itself', 'then', 'yours', 'in', 'most', 'having', 'we', 'her', 'whose', 'this', 'all', 'themselves', 'again', 'his', 'yet', 'further', 'become', 'whoever', 'of', 'neither', 'almost', 'else', 'them', 'whether', 't', 'although', 'the', 'why', 'to', 'he', 'yes', 'there', 'both', 'so', 'my', 'at', 'had', 'is', 'other', 'below', 'without', 'too', 'actually', 'hence', 'it', 'don', 'while', 'wherever', 'she', 'should', 'such', 'above', 'and', 'some', 'because', 'but', 'would', 'himself', 'with', 'own', 'became', 'on', 'might', 'how', 'few', 'as', 'does', 'may', 'through', 'which', 'very', 'into', 'just', 'a', 'over', 'theirs', 'ours', 'whenever', 'nor', 'here', 'did', 'if', 'up', 'must', 'within', 'for', 'me', 'has', 'where', 'whom', 'who', 'either', 'yourselves', 'you', 'more', 'or', 'being', 'same', 'oh', 'hers', 'i']
     query = request.args.get('query', '')
+    query = tokenizer(query)
+    query = [token for token in query if token.lower() not in extended_stopwords]
     if len(query) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
-    originalquery = tokenizer(query)
 
-    ########################### TITLE ###########################
-    query = originalquery
-    ids = {}
-    for word, pls in index_title.posting_lists_iter():
-        for qword in query:
-            if qword == word:
-                for one_pls in pls:
-                    ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
-    titles = ids
-    ########################### BODY ###########################
-    words, pls = zip(*(index_body.posting_lists_iter()))
-    query = [token for token in originalquery if token.lower() not in extended_stopwords]
-    query, candidates = get_candidates(words, pls, query)
-    if len(query) == 0 or len(candidates) == 0:
-        body = []
-    else:
-      df_tfidfvect, tfidfvectorizer = tf_idf_scores(
-          [page[2] for page in pages if page[0] in candidates])
-      query_vector = tfidfvectorizer.transform([' '.join(query)])
 
-      cosine_sim_df = cosine_sim_using_sklearn(query_vector, df_tfidfvect)
-
-      top_100_docs = top_N_documents(cosine_sim_df, 100)
-
-      doc_ids = [x[0] for x in top_100_docs[0]];
-
-      body = [([candidate for candidate in candidates][doc_id], weight) for doc_id, weight in top_100_docs[0]]
-      body = [b for b in body if b[1] > 0]
-
-    ########################### ANCHOR ###########################
-    query = originalquery
-    res = []
-    if len(query) == 0:
-        return jsonify(res)
-
-    ids = {}
-    for word, pls in index_anchor.posting_lists_iter():
-        for qword in query:
-            if qword == word:
-                for one_pls in pls:
-                    ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
-
-    anchors = ids
-    ###########################***********###########################
-
-    w_title = 0.5
-    w_body = 0.3
-    w_anchor = 0.2
-    weighted = {}
-    for id, num in titles.items():
-      weighted[id] = weighted.get(id, 0) + num * w_title
-
-    for id, num in body:
-      weighted[id] = weighted.get(id, 0) + num * w_body
-    temp = [x[1] for x in body]
-    norm = [(float(i)/max(temp)+1)/2 for i in temp]  # Refine later for usage.
-
-    for id, num in anchors.items():
-      weighted[id] = weighted.get(id, 0) + num * w_anchor
-
-    weighted = dict(sorted(weighted.items(), key=lambda item: item[1], reverse=True))
-
-    for page in pages:
-      if page[0] in weighted.keys():
-          res.append(((page[0], page[1]), weighted[page[0]]))
-    res = [x[0] for x in sorted(res, key=lambda x: x[1], reverse=True)][:100]
 
     # END SOLUTION
     return jsonify(res)
-
 
 @app.route("/search_body")
 def search_body():
@@ -172,38 +137,12 @@ def search_body():
     '''
     res = []
     query = request.args.get('query', '')
+    query = tokenizer(query)
     if len(query) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
 
-    words, pls = zip(*(index_body.posting_lists_iter()))
-    tokenized = tokenizer(query)
-
-    tokenized, candidates = get_candidates(words, pls, tokenized)
-
-    if len(tokenized) == 0 or len(candidates) == 0:
-        return jsonify(res)
-    df_tfidfvect, tfidfvectorizer = tf_idf_scores(
-        [page[2] for page in pages if page[0] in candidates])
-
-    query_vector = tfidfvectorizer.transform([' '.join(tokenized)])
-
-    cosine_sim_df = cosine_sim_using_sklearn(query_vector, df_tfidfvect)
-
-    top_100_docs = top_N_documents(cosine_sim_df, 100)
-    doc_ids = [x[0] for x in top_100_docs[0]]
-
-    ordered_actual_ids = [[candidate for candidate in candidates][doc_id] for doc_id in doc_ids]
-
-    temp = {}
-    candidates = list(candidates)
-    for page in pages:
-        if page[0] in ordered_actual_ids:
-            temp[candidates.index(page[0])] = (page[0], page[1])
-
-    index_map = {v: i for i, v in enumerate(doc_ids)}
-    res = [x[1] for x in sorted(temp.items(), key=lambda pair: index_map[pair[0]])]
-
+    res = get_topN_score_for_queries(query, index_body)
     # END SOLUTION
     return jsonify(res)
 
@@ -232,23 +171,22 @@ def search_title():
 
     res = []
     query = request.args.get('query', '')
+    query = tokenizer(query)
     if len(query) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
-    newquery = tokenizer(query)
     ids = {}
     for word, pls in index_title.posting_lists_iter():
-        print(f"Searching\t\"{word}\"\n")
-        for qword in newquery:
+        for qword in query:
             if qword == word:
                 for one_pls in pls:
                     ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_appearances}
 
-    print(pages[0])
-    for id in ids.keys():
-        id_in_pages = pages.get(id)
+
+    for id_inner in ids.keys():
+        id_in_pages = pages.get(id_inner)
         if id_in_pages:
-            res.append(((id, pages[id][0]), ids[id]))
+            res.append(((id_inner, pages[id_inner][0]), ids[id_inner]))
     res = [x[0] for x in sorted(res, key=lambda x: x[1], reverse=True)]
     # END SOLUTION
     return jsonify(res)
@@ -277,7 +215,7 @@ def search_anchor():
     '''
     res = []
     query = request.args.get('query', '')
-    query = np.unique(tokenizer(query))
+    query = tokenizer(query)
     if len(query) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
@@ -288,10 +226,10 @@ def search_anchor():
             if qword == word:
                 for one_pls in pls:
                     ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
-    for id in ids.keys():
-        id_in_pages = pages.get(id)
+    for id_inner in ids.keys():
+        id_in_pages = pages.get(id_inner)
         if id_in_pages:
-            res.append(((id, pages[id][0]), ids[id]))
+            res.append(((id_inner, pages[id_inner][0]), ids[id_inner]))
     res = [x[0] for x in sorted(res, key=lambda x: x[1], reverse=True)]
 
     # END SOLUTION
@@ -369,105 +307,95 @@ RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
 
 
 def tokenizer(text):
-    tokens = [token.group() for token in RE_WORD.finditer(text.lower())]
+    tokens = np.unique([token.group() for token in RE_WORD.finditer(text.lower())])
     return tokens
 
 
-def tf_idf_scores(data):  # From assignment 4.
-    """
-    This function calculates the tfidf for each word in a single document utilizing TfidfVectorizer via sklearn.
-
-    Parameters:
-    -----------
-      data: list of strings.
-
-    Returns:
-    --------
-      Two objects as follows:
-                                a) DataFrame, documents as rows (i.e., 0,1,2,3, etc'), terms as columns ('bird','bright', etc').
-                                b) TfidfVectorizer object.
-
-    """
-    vectorizer = TfidfVectorizer(stop_words=all_stopwords)
-    X = vectorizer.fit_transform(data)
-
-    terms = vectorizer.get_feature_names_out()
-    df = pd.DataFrame(data=X.toarray(), columns=terms)
-
-    return df, vectorizer
 
 
-def cosine_sim_using_sklearn(queries, tfidf):  # From assignment 4.
-    """
-    In this function you need to utilize the cosine_similarity function from sklearn.
-    You need to compute the similarity between the queries and the given documents.
-    This function will return a DataFrame in the following shape: (# of queries, # of documents).
-    Each value in the DataFrame will represent the cosine_similarity between given query and document.
-
-    Parameters:
-    -----------
-      queries: sparse matrix represent the queries after transformation of tfidfvectorizer.
-      documents: sparse matrix represent the documents.
-
-    Returns:
-    --------
-      DataFrame: This function will return a DataFrame in the following shape: (# of queries, # of documents).
-      Each value in the DataFrame will represent the cosine_similarity between given query and document.
-    """
-    return cosine_similarity(queries, tfidf)
-
-
-def top_N_documents(df, N):  # From assignment 4.
-    """
-    This function sort and filter the top N docuemnts (by score) for each query.
-
-    Parameters
-    ----------
-    df: DataFrame (queries as rows, documents as columns)
-    N: Integer (how many document to retrieve for each query)
-
-    Returns:
-    ----------
-    top_N: dictionary is the following stracture:
-          key - query id.
-          value - sorted (according to score) list of pairs lengh of N. Eac pair within the list provide the following information (doc id, score)
-    """
-    lines = [sorted(list(enumerate(x)), key=lambda y: y[1], reverse=True)[:N] for x in
-             df]  # TODO: Make more efficient, we only have on query
-    return dict(enumerate(lines))
-
-
-def get_candidates(words, pls, query_to_search, N=50):
-    """
-    This function goes over documents and checks for every query token if it appears in words, and counts the number of documents it appears in.
-    This function is used to filter both documents and tokens; filters tokens that appeared in less than N documents.
-
-    Parameters
-    ----------
-    query_to_search: list of tokens (str). This list will be preprocessed in advance.
-
-    words,pls: iterator for working with posting.
-
-    N: integer (default: 50)
-
-    Returns:
-    ----------
-    filtered_tokens: Tokens that appeared in more than N documents.
-    candidate_list: Set of doc_id that had a token in filtered_tokens appear in their body text.
-    """
-
+def get_candidate_documents_and_scores(query_to_search,index,words,pls):
     candidates = {}
-    filtered_tokens = []
-    candidate_list = set()
-    for term in np.unique(query_to_search):
+    for term in query_to_search:
         if term in words:
-            pls_list = pls[words.index(term)]  # TODO: Can improve
-            for v in pls_list:
-                candidates[v] = candidates.get(v, 0) + 1
-        if sum(candidates.values()) >= N:
-            filtered_tokens.append(term)
-            candidate_list.update([key[0] for key in candidates.keys()])
-    return filtered_tokens, candidate_list
+            list_of_doc = pls[words.index(term)]
+
+            normlized_tfidf = [(doc_id, (freq / pages[doc_id][1][1]) * math.log(pages_len / index.df[term], 10)) for doc_id, freq in list_of_doc]
+
+            for doc_id, tfidf in normlized_tfidf:
+                candidates[(doc_id, term)] = candidates.get((doc_id, term), 0) + tfidf
+
+    return candidates
+
+
+def generate_document_tfidf_matrix(query_to_search,index,words,pls):
+    total_vocab_size = len(index.term_total)
+    candidates_scores = get_candidate_documents_and_scores(query_to_search, index, words, pls)
+    unique_candidates = np.unique([doc_id for doc_id, freq in candidates_scores.keys()])
+    D = np.zeros((len(unique_candidates), total_vocab_size))
+    D = pd.DataFrame(D)
+
+    D.index = unique_candidates
+    D.columns = index.term_total.keys()
+
+    for key in candidates_scores:
+        tfidf = candidates_scores[key]
+        doc_id, term = key
+        D.loc[doc_id][term] = tfidf
+    return D
+
+
+def cosine_similarity(D,Q):
+    fin_dict = {}
+    normQ = np.linalg.norm(Q)
+    for doc_id in D.rows.index:
+        A = D.loc[doc_id]
+        normA = np.linalg.norm(A)
+        cosine = np.dot(A, Q) / (normA * normQ)
+        fin_dict[doc_id] = cosine
+
+    return fin_dict
+
+
+def generate_query_tfidf_vector(query_to_search,index):
+    epsilon = .0000001
+    total_vocab_size = len(index.term_total)
+    Q = np.zeros((total_vocab_size))
+    term_vector = list(index.term_total.keys())
+    counter = Counter(query_to_search)
+    for token in np.unique(query_to_search):
+        if token in index.term_total.keys():  # avoid terms that do not appear in the index.
+            tf = counter[token] / len(query_to_search)  # term frequency divded by the length of the query
+            df = index.df[token]
+            idf = math.log(pages_len / (df + epsilon), 10)  # smoothing
+
+            try:
+                ind = term_vector.index(token)
+                Q[ind] = tf * idf
+            except:
+                pass
+    return Q
+
+
+def get_top_n(sim_dict, N=100):
+    return sorted([(doc_id,round(score,5)) for doc_id, score in sim_dict.items()], key = lambda x: x[1],reverse=True)[:N]
+
+
+def get_posting_iter(index):
+    words, pls = zip(*index.posting_lists_iter())
+    return words,pls
+
+
+def get_topN_score_for_queries(queries_to_search, index, N=100):
+    words, pls = get_posting_iter(index)
+    D = generate_document_tfidf_matrix(queries_to_search, index, words, pls)
+    sim_dict = cosine_similarity(D, generate_query_tfidf_vector(queries_to_search, index))
+    ranked = get_top_n(sim_dict, N)
+    return ranked
+
+
+
+
+
 
 if __name__ == '__main__':
     # run the Flask RESTful API, make the server publicly available (host='0.0.0.0') on port 8080
