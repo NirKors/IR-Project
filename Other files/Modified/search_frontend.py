@@ -42,7 +42,7 @@ with open(*files, 'rb') as f:
     pages = pickle.load(f)  # id: (title, len(text), count(most_frequent_term))
 
 pages_len = len(pages)
-d_avg = sum([page[1][1] for page in pages]) / pages_len  #TODO: Fix
+d_avg = sum([page[1] for page in pages.values()]) / pages_len  #TODO: Fix
 # test = dict(zip(*(index_body.posting_lists_iter())))
 
 # TODO: Enable once we have the file.
@@ -313,50 +313,81 @@ def tokenizer(text):
 
 
 
-def get_candidate_documents_and_scores(query_to_search,index,words,pls):
+def get_candidate_documents_and_scores(index,words,pls):
     candidates = {}
-    for term in query_to_search:
-        if term in words:
-            list_of_doc = pls[words.index(term)]
+    for term, pl in zip(words, pls):
+        list_of_doc = pl
 
-            normlized_tfidf = [(doc_id, (freq / pages[doc_id][1][1]) * math.log(pages_len / index.df[term], 10)) for doc_id, freq in list_of_doc]
+        normlized_tfidf = [(doc_id, (freq / pages[doc_id][1]) * math.log(pages_len / index.df[term], 10)) for doc_id, freq in list_of_doc]
 
-            for doc_id, tfidf in normlized_tfidf:
-                candidates[(doc_id, term)] = candidates.get((doc_id, term), 0) + tfidf
+        for doc_id, tfidf in normlized_tfidf:
+            candidates[(doc_id, term)] = candidates.get((doc_id, term), 0) + tfidf
 
     return candidates
 
 
-def generate_document_tfidf_matrix(query_to_search,index,words,pls):
-    total_vocab_size = len(index.term_total)
-    candidates_scores = get_candidate_documents_and_scores(query_to_search, index, words, pls)
+def myread(index, word):  # TODO: Change
+    f_name, offset, n_bytes = index.posting_locs[word][0][0], index.posting_locs[word][0][1], index.df[word]*6
+    with open(index.iname + "/" + f_name, 'rb') as f:
+        mylist = []
+        f.seek(offset)
+        for i in range(int(n_bytes/6)):
+            b = (f.read(6))
+            doc_id = int.from_bytes(b[0:4], 'big')
+            tf = int.from_bytes(b[4:], 'big')
+            mylist.append((doc_id, tf))
+    return mylist
+
+
+def generate_document_tfidf_matrix(query_to_search, index):
+    words = []
+    pls = []
+    for word in query_to_search:
+        words.append(word)
+        pls.append(myread(index, word))
+    total_vocab_size = len(words)
+    candidates_scores = get_candidate_documents_and_scores(index, words, pls)
     unique_candidates = np.unique([doc_id for doc_id, freq in candidates_scores.keys()])
     D = np.zeros((len(unique_candidates), total_vocab_size))
+
     D = pd.DataFrame(D)
 
     D.index = unique_candidates
-    D.columns = index.term_total.keys()
-
+    D.columns = words
+    # dot product pandas df
     for key in candidates_scores:
         tfidf = candidates_scores[key]
         doc_id, term = key
-        D.loc[doc_id][term] = tfidf
+        D.loc[[doc_id], [term]] = tfidf
     return D
 
+def cosine_similarity(D, Q):
 
-def cosine_similarity(D,Q):
-    fin_dict = {}
-    normQ = np.linalg.norm(Q)
-    for doc_id in D.rows.index:
-        A = D.loc[doc_id]
-        normA = np.linalg.norm(A)
-        cosine = np.dot(A, Q) / (normA * normQ)
-        fin_dict[doc_id] = cosine
-
-    return fin_dict
+    D = D.dot(Q)  # This is type() = Series, me wanty wanty LINES from it
+    #sorted...
 
 
-def generate_query_tfidf_vector(query_to_search,index):
+
+    print(f"D:\n{D}\n")
+
+
+
+    Dlines = sorted(D, key=lambda x: x[1])
+    print(f"Dlines:\n{Dlines}\n")
+
+    dic = {}
+    for id, wij in Dlines:
+      wijsq = np.sum(np.square(wij))
+      cossim = np.dot(Q, wij)/np.sqrt(wijsq * wijsq)
+      dic[id] = cossim
+    return dic
+
+
+def generate_query_tfidf_vector(query_to_search, index):
+    C = Counter(query_to_search)
+    Qvector = [C[word]/index.df[word]/len(query_to_search) for word in query_to_search]
+    return Qvector
+    '''
     epsilon = .0000001
     total_vocab_size = len(index.term_total)
     Q = np.zeros((total_vocab_size))
@@ -374,6 +405,7 @@ def generate_query_tfidf_vector(query_to_search,index):
             except:
                 pass
     return Q
+    '''
 
 
 def get_top_n(sim_dict, N=100):
@@ -386,9 +418,12 @@ def get_posting_iter(index):
 
 
 def get_topN_score_for_queries(queries_to_search, index, N=100):
-    words, pls = get_posting_iter(index)
-    D = generate_document_tfidf_matrix(queries_to_search, index, words, pls)
-    sim_dict = cosine_similarity(D, generate_query_tfidf_vector(queries_to_search, index))
+    D = generate_document_tfidf_matrix(queries_to_search, index)
+    Q = generate_query_tfidf_vector(queries_to_search, index)
+
+
+
+    sim_dict = cosine_similarity(D, Q)
     ranked = get_top_n(sim_dict, N)
     return ranked
 

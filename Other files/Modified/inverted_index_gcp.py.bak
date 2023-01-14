@@ -67,10 +67,7 @@ class MultiFileReader:
     def __init__(self):
         self._open_files = {}
 
-    def read(self, locs, n_bytes, name):
-    
-        print(f"locs:\n{locs}\n\n")
-        
+    def read(self, locs, n_bytes, name):        
         name = f"{name}/"
         b = []
         if not isinstance(locs, list):
