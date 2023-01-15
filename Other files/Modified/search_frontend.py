@@ -1,6 +1,6 @@
 import math
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 
 import nltk
 import numpy as np
@@ -30,8 +30,11 @@ path = "/home/nirkor"
 
 
 index_body = InvertedIndex.read_index(f"{path}/body_index", "index")
+index_body.posting_locs = dict(index_body.posting_locs)
 index_title = InvertedIndex.read_index(f"{path}/title_index", "index")
+index_title.posting_locs = dict(index_title.posting_locs)
 index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "index")
+index_anchor.posting_locs = dict(index_anchor.posting_locs)
 
 
 files = glob.glob(f"{path}/pr/*.gz")
@@ -42,16 +45,15 @@ with open(*files, 'rb') as f:
     pages = pickle.load(f)  # id: (title, len(text), count(most_frequent_term))
 
 pages_len = len(pages)
-d_avg = sum([page[1] for page in pages.values()]) / pages_len  #TODO: Fix
-# test = dict(zip(*(index_body.posting_lists_iter())))
+d_avg = sum([page[1] for page in pages.values()]) / pages_len
 
 # TODO: Enable once we have the file.
 # wiki_id_2_pageview = None
-# with open(f"{path}/pr/pageviews-202108-user.pkl", 'rb') as f:
+# with open(f"{path}/pr/pageviews-202108-user.pkl", 'rb') as f:  # TODO: Check this hsit nmhanhlkd
 #     wiki_id_2_pageview = pickle.loads(f.read())
 
 
-
+print("Ready.")
 
 def tokenize_text(text):
     english_stopwords = frozenset(stopwords.words('english'))
@@ -63,28 +65,6 @@ def tokenize_text(text):
     all_stopwords = english_stopwords.union(corpus_stopwords)
     return [token.group() for token in RE_WORD.finditer(text.lower()) if token.group() not in all_stopwords]
 
-
-def BM25(doc_id, query):
-
-    tfij = 0
-    dfj = 0
-
-
-
-    b = 0
-    k1 = 0
-    k3 = 0
-
-    djsize = pages[doc_id][1]
-    N = pages_len
-    BM25 = 0
-    B = 1 - b + b * (djsize / d_avg)
-    for term in query:
-        tfij = 0
-        tfiq = 0
-
-        BM25 += ((k1 + 1) * tfij)/(B*k1+tfij) * math.log((N + 1)/dfj, 10) * ((k3 + 1) / tfiq / (k3 + tfiq))
-    return BM25
 
 @app.route("/search")
 def search():
@@ -113,8 +93,29 @@ def search():
     if len(query) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
-
-
+    # Let's build it slowly but surely
+    # Really dumb implementation:
+    # We make a document where the key is a tuple with (Doc, Query) key and score value
+    query_counter = Counter(query) # A counter of our queries.
+    b=0.75
+    k1=1.2 # Usually between [1.2,2]
+    N=len(pages) # Total number of documents in the corpus
+    can_dict = Counter()
+    #Here is how the score function will work:
+    for term in query:
+        if index_body.df.get(term) and index_body.posting_locs.get(term):
+            IDF = np.log10((N+1)/index_body.df[term])
+            TFiq = (k1 + 1) * query_counter[term] / (k1 * query_counter[term])
+            pls = myread(index_body, term)
+            for pl in pls:
+                # if pl[0] == 0:
+                #     continue
+                B = (1-b)+(b * pages[pl[0]][1] / d_avg)
+                TFij = ((k1+1)*pl[1])/((B*k1)+pl[1])
+                can_dict[pl[0]] += IDF * TFij * TFiq
+    for d_id, _ in can_dict.most_common(100):
+        title = pages[d_id][0]
+        res.append((d_id, title))
 
     # END SOLUTION
     return jsonify(res)
@@ -143,6 +144,11 @@ def search_body():
     # BEGIN SOLUTION
 
     res = get_topN_score_for_queries(query, index_body)
+    for r in res:
+        print(r)
+    print(res[0][0], res[0][1])
+    print(type(res[0][0]), type(res[0][1]))
+    print(*res[0][1])
     # END SOLUTION
     return jsonify(res)
 
@@ -175,13 +181,12 @@ def search_title():
     if len(query) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
-    ids = {}
-    for word, pls in index_title.posting_lists_iter():
-        for qword in query:
-            if qword == word:
-                for one_pls in pls:
-                    ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_appearances}
 
+    ids = {}
+    postings = [myread(index_title, qword) for qword in query]
+    for pls in postings:
+        for posting in pls:
+            ids[posting[0]] = ids.get(posting[0], 0) + 1
 
     for id_inner in ids.keys():
         id_in_pages = pages.get(id_inner)
@@ -221,11 +226,11 @@ def search_anchor():
     # BEGIN SOLUTION
 
     ids = {}
-    for word, pls in index_anchor.posting_lists_iter():
-        for qword in query:
-            if qword == word:
-                for one_pls in pls:
-                    ids[one_pls[0]] = ids.get(one_pls[0], 0) + 1  # ids{id: number_of_apperances}
+    postings = [myread(index_anchor, qword) for qword in query]
+    for pls in postings:
+        for posting in pls:
+            ids[posting[0]] = ids.get(posting[0], 0) + 1
+
     for id_inner in ids.keys():
         id_in_pages = pages.get(id_inner)
         if id_in_pages:
@@ -290,7 +295,8 @@ def get_pageview():
     if len(wiki_ids) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
-
+    for doc_id in wiki_ids:
+        res.append(wiki_id_2_pageview.get(doc_id, 0))
     # END SOLUTION
     return jsonify(res)
 
@@ -318,7 +324,7 @@ def get_candidate_documents_and_scores(index,words,pls):
     for term, pl in zip(words, pls):
         list_of_doc = pl
 
-        normlized_tfidf = [(doc_id, (freq / pages[doc_id][1]) * math.log(pages_len / index.df[term], 10)) for doc_id, freq in list_of_doc]
+        normlized_tfidf = [(doc_id, (freq / pages[doc_id][1])*np.log10(pages_len * index.df[term])) for doc_id, freq in list_of_doc]
 
         for doc_id, tfidf in normlized_tfidf:
             candidates[(doc_id, term)] = candidates.get((doc_id, term), 0) + tfidf
@@ -326,17 +332,31 @@ def get_candidate_documents_and_scores(index,words,pls):
     return candidates
 
 
-def myread(index, word):  # TODO: Change
+def myread(index, word):
+    '''
+    Based on assignment 2.
+    Used for faster recovery of information.
+    Args:
+        index: InvertedIndex
+        word: Word to search
+
+    Returns:
+        Posting_List of given word
+
+    '''
+
+    if not index.posting_locs.get(word):
+        return
     f_name, offset, n_bytes = index.posting_locs[word][0][0], index.posting_locs[word][0][1], index.df[word]*6
     with open(index.iname + "/" + f_name, 'rb') as f:
-        mylist = []
+        pls = []
         f.seek(offset)
         for i in range(int(n_bytes/6)):
             b = (f.read(6))
             doc_id = int.from_bytes(b[0:4], 'big')
             tf = int.from_bytes(b[4:], 'big')
-            mylist.append((doc_id, tf))
-    return mylist
+            pls.append((doc_id, tf))
+    return pls
 
 
 def generate_document_tfidf_matrix(query_to_search, index):
@@ -361,31 +381,21 @@ def generate_document_tfidf_matrix(query_to_search, index):
         D.loc[[doc_id], [term]] = tfidf
     return D
 
-def cosine_similarity(D, Q):
+def cosine_similarity(D, Q, query_size):
+    D_squered = D ** 2  # TODO: can be moved out
 
-    D = D.dot(Q)  # This is type() = Series, me wanty wanty LINES from it
-    #sorted...
+    D1 = D.dot(Q)
+    dict = {}
 
-
-
-    print(f"D:\n{D}\n")
-
-
-
-    Dlines = sorted(D, key=lambda x: x[1])
-    print(f"Dlines:\n{Dlines}\n")
-
-    dic = {}
-    for id, wij in Dlines:
-      wijsq = np.sum(np.square(wij))
-      cossim = np.dot(Q, wij)/np.sqrt(wijsq * wijsq)
-      dic[id] = cossim
-    return dic
+    for id, cosim_up in D1.items():
+        doc_size = pages[id][1]
+        dict[id] = cosim_up / np.sqrt(query_size * doc_size)
+    return dict
 
 
 def generate_query_tfidf_vector(query_to_search, index):
     C = Counter(query_to_search)
-    Qvector = [C[word]/index.df[word]/len(query_to_search) for word in query_to_search]
+    Qvector = [C[word]/np.log10(index.df[word] * len(query_to_search)) for word in query_to_search]
     return Qvector
     '''
     epsilon = .0000001
@@ -409,7 +419,7 @@ def generate_query_tfidf_vector(query_to_search, index):
 
 
 def get_top_n(sim_dict, N=100):
-    return sorted([(doc_id,round(score,5)) for doc_id, score in sim_dict.items()], key = lambda x: x[1],reverse=True)[:N]
+    return sorted([(doc_id, np.round(score,5)) for doc_id, score in sim_dict.items()], key = lambda x: x[1],reverse=True)[:N]
 
 
 def get_posting_iter(index):
@@ -418,13 +428,15 @@ def get_posting_iter(index):
 
 
 def get_topN_score_for_queries(queries_to_search, index, N=100):
+
     D = generate_document_tfidf_matrix(queries_to_search, index)
+
     Q = generate_query_tfidf_vector(queries_to_search, index)
 
+    sim_dict = cosine_similarity(D, Q, len(queries_to_search))
 
-
-    sim_dict = cosine_similarity(D, Q)
     ranked = get_top_n(sim_dict, N)
+
     return ranked
 
 
