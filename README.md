@@ -1,6 +1,6 @@
 # IR-Project
 ## Organization
-The preprocessed files are stored in the bucket and are pulled into the VM instance at launch.
+The preprocessed files are stored in the [bucket](https://console.cloud.google.com/storage/browser/nir399513) and are pulled into the VM instance at launch.
 These preprocessed files include the following, separated into folders:
 * body_index/
   - index.pkl
