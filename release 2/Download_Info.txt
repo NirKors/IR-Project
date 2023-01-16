@@ -1,6 +1,5 @@
 mkdir title_index
 gcloud storage cp -r gs://nir399513/title_index/*.bin gs://nir399513/title_index/*.pkl /home/nirkor/title_index/
-
 mkdir body_index
 gcloud storage cp -r gs://nir399513/body_index/*.bin gs://nir399513/body_index/*.pkl /home/nirkor/body_index/
 mkdir anchor_index

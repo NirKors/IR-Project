@@ -35,21 +35,23 @@ index_title.posting_locs = dict(index_title.posting_locs)
 index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "index")
 index_anchor.posting_locs = dict(index_anchor.posting_locs)
 
-files = glob.glob(f"{path}/pr/*.gz")
-pr_results = pd.read_csv(*files)
 
-with open(f"{path}/processed/processed.pickle", 'rb') as f:
+path = "/home/nirkor/processed"
+
+with open(f"{path}/processed.pickle", 'rb') as f:
     pages = pickle.load(f)  # id: (title, len(text), count(most_frequent_term))
+
+with open(f"{path}/pageviews-202108-user.pkl", 'rb') as f:
+    wiki_id_2_pageview = pickle.loads(f.read())
+
+with open(f"{path}/doctf.pickle", 'rb') as f:
+    doctf = pickle.loads(f.read())
+
+with open(f"{path}/pr_results.pickle", 'rb') as f:
+    pr_results = pickle.loads(f.read())
 
 pages_len = len(pages)
 d_avg = sum([page[1] for page in pages.values()]) / pages_len
-
-with open(f"{path}/processed/pageviews-202108-user.pkl", 'rb') as f:
-    wiki_id_2_pageview = pickle.loads(f.read())
-
-with open(f"{path}/processed/doctf.pickle", 'rb') as f:
-    doctf = pickle.loads(f.read())
-
 info = api.info()
 wiki_info = api.info('glove-wiki-gigaword-100')
 model = api.load("glove-wiki-gigaword-100")
@@ -100,10 +102,13 @@ def search():
     # BEGIN SOLUTION
     # We make a document where the key is a tuple with (Doc, Query) key and score value
 
-    # query = qexpand(query)
+    query = qexpand(query)
 
-    weight_title = 0.45
-    weight_body = 0.55
+    weight_title = 0.40
+    weight_body = 0.50
+    weight_anchor = 0.10
+
+
     query_counter = Counter(query)  # A counter of our queries.
     b = 0.75
     k1 = 1.2  # Usually between [1.2,2]
@@ -127,6 +132,17 @@ def search():
     for d_id, weight in bodies.most_common(100):
         weighted[d_id] += weight/max_w * weight_body
 
+    # ANCHOR:
+    ids = Counter()
+    postings = [read_pls(index_anchor, qword) for qword in query]
+    for pls in postings:
+        if pls:
+            for posting in pls:
+                ids[posting[0]] = ids.get(posting[0], 0) + 1
+    _, max_t_w = ids.most_common(1)[0]
+    for d_id, weight in ids.most_common(100):
+        weighted[d_id] += weight/max_t_w * weight_anchor
+    # ID:
     ids = Counter()
     postings = [read_pls(index_title, qword) for qword in query]
     for pls in postings:
@@ -137,6 +153,10 @@ def search():
     for d_id, weight in ids.most_common(100):
         weighted[d_id] += weight/max_t_w * weight_title
 
+    # PAGE_RANK:
+
+    # PAGE_VIEW:
+    # TOTAL:
     for d_id, _ in weighted.most_common(100):
         title = pages[d_id][0]
         res.append((d_id, title))
@@ -456,7 +476,7 @@ def qexpand(query):
     '''
     new_q = [x for x in query]
     for qword in query:
-        ret = model.most_similar(qword, topn=25)
+        ret = model.most_similar(qword, topn=6)
         for word, _ in ret:
             if word in qword or qword in word:
                 new_q.append(word)
