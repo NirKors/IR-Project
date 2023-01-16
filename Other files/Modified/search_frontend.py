@@ -1,33 +1,32 @@
 import math
 import re
 from collections import Counter, defaultdict
-
 import nltk
 import numpy as np
 import pandas as pd
 from flask import Flask, request, jsonify
 
 nltk.download('stopwords')
-
 from nltk.corpus import stopwords
-
 import pickle
 from inverted_index_gcp import InvertedIndex
 import glob
 
+import logging
+
+logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
+import gensim.downloader as api
+from gensim.models.word2vec import Word2Vec
 
 
 class MyFlaskApp(Flask):
     def run(self, host=None, port=None, debug=None, **options):
         super(MyFlaskApp, self).run(host=host, port=port, debug=debug, **options)
 
-
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 
-bucket_name = "training_index"
 path = "/home/nirkor"
-
 
 index_body = InvertedIndex.read_index(f"{path}/body_index", "index")
 index_body.posting_locs = dict(index_body.posting_locs)
@@ -35,7 +34,6 @@ index_title = InvertedIndex.read_index(f"{path}/title_index", "index")
 index_title.posting_locs = dict(index_title.posting_locs)
 index_anchor = InvertedIndex.read_index(f"{path}/anchor_index", "index")
 index_anchor.posting_locs = dict(index_anchor.posting_locs)
-
 
 files = glob.glob(f"{path}/pr/*.gz")
 pr_results = pd.read_csv(*files)
@@ -46,15 +44,18 @@ with open(f"{path}/processed/processed.pickle", 'rb') as f:
 pages_len = len(pages)
 d_avg = sum([page[1] for page in pages.values()]) / pages_len
 
-
-wiki_id_2_pageview = None
 with open(f"{path}/processed/pageviews-202108-user.pkl", 'rb') as f:
     wiki_id_2_pageview = pickle.loads(f.read())
 
 with open(f"{path}/processed/doctf.pickle", 'rb') as f:
     doctf = pickle.loads(f.read())
 
+info = api.info()
+wiki_info = api.info('glove-wiki-gigaword-100')
+model = api.load("glove-wiki-gigaword-100")
+
 print("Ready")
+
 
 @app.route("/search")
 def search():
@@ -76,39 +77,73 @@ def search():
     '''
 
     res = []
-    extended_stopwords = ['ok', 'their', 'before', 'are', 'now', 'until', 's', 'during', 'between', 'not', 'maybe', 'an', 'any', 'each', 'can', 'by', 'that', 'from', 'myself', 'than', 'also', 'off', 'these', 'they', 'am', 'no', 'will', 'yourself', 'do', 'against', 'out', 'him', 'your', 'whereas', 'once', 'have', 'were', 'down', 'its', 'been', 'after', 'could', 'was', 'what', 'doing', 'under', 'when', 'only', 'herself', 'always', 'be', 'mine', 'about', 'those', 'ourselves', 'our', 'itself', 'then', 'yours', 'in', 'most', 'having', 'we', 'her', 'whose', 'this', 'all', 'themselves', 'again', 'his', 'yet', 'further', 'become', 'whoever', 'of', 'neither', 'almost', 'else', 'them', 'whether', 't', 'although', 'the', 'why', 'to', 'he', 'yes', 'there', 'both', 'so', 'my', 'at', 'had', 'is', 'other', 'below', 'without', 'too', 'actually', 'hence', 'it', 'don', 'while', 'wherever', 'she', 'should', 'such', 'above', 'and', 'some', 'because', 'but', 'would', 'himself', 'with', 'own', 'became', 'on', 'might', 'how', 'few', 'as', 'does', 'may', 'through', 'which', 'very', 'into', 'just', 'a', 'over', 'theirs', 'ours', 'whenever', 'nor', 'here', 'did', 'if', 'up', 'must', 'within', 'for', 'me', 'has', 'where', 'whom', 'who', 'either', 'yourselves', 'you', 'more', 'or', 'being', 'same', 'oh', 'hers', 'i']
+    extended_stopwords = ['ok', 'their', 'before', 'are', 'now', 'until', 's', 'during', 'between', 'not', 'maybe',
+                          'an', 'any', 'each', 'can', 'by', 'that', 'from', 'myself', 'than', 'also', 'off', 'these',
+                          'they', 'am', 'no', 'will', 'yourself', 'do', 'against', 'out', 'him', 'your', 'whereas',
+                          'once', 'have', 'were', 'down', 'its', 'been', 'after', 'could', 'was', 'what', 'doing',
+                          'under', 'when', 'only', 'herself', 'always', 'be', 'mine', 'about', 'those', 'ourselves',
+                          'our', 'itself', 'then', 'yours', 'in', 'most', 'having', 'we', 'her', 'whose', 'this', 'all',
+                          'themselves', 'again', 'his', 'yet', 'further', 'become', 'whoever', 'of', 'neither',
+                          'almost', 'else', 'them', 'whether', 't', 'although', 'the', 'why', 'to', 'he', 'yes',
+                          'there', 'both', 'so', 'my', 'at', 'had', 'is', 'other', 'below', 'without', 'too',
+                          'actually', 'hence', 'it', 'don', 'while', 'wherever', 'she', 'should', 'such', 'above',
+                          'and', 'some', 'because', 'but', 'would', 'himself', 'with', 'own', 'became', 'on', 'might',
+                          'how', 'few', 'as', 'does', 'may', 'through', 'which', 'very', 'into', 'just', 'a', 'over',
+                          'theirs', 'ours', 'whenever', 'nor', 'here', 'did', 'if', 'up', 'must', 'within', 'for', 'me',
+                          'has', 'where', 'whom', 'who', 'either', 'yourselves', 'you', 'more', 'or', 'being', 'same',
+                          'oh', 'hers', 'i']
     query = request.args.get('query', '')
     query = tokenizer(query)
     query = [token for token in query if token.lower() not in extended_stopwords]
     if len(query) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
-    # Let's build it slowly but surely
-    # Really dumb implementation:
     # We make a document where the key is a tuple with (Doc, Query) key and score value
-    query_counter = Counter(query) # A counter of our queries.
-    b=0.75
-    k1=1.2 # Usually between [1.2,2]
-    N=len(pages) # Total number of documents in the corpus
-    can_dict = Counter()
-    #Here is how the score function will work:
+
+    # query = qexpand(query)
+
+    weight_title = 0.45
+    weight_body = 0.55
+    query_counter = Counter(query)  # A counter of our queries.
+    b = 0.75
+    k1 = 1.2  # Usually between [1.2,2]
+    N = len(pages)  # Total number of documents in the corpus
+    bodies = Counter()
+    # Here is how the score function will work:
     for term in query:
         if index_body.df.get(term) and index_body.posting_locs.get(term):
-            IDF = np.log10((N+1)/index_body.df[term])
+            IDF = np.log10((N + 1) / index_body.df[term])
             TFiq = (k1 + 1) * query_counter[term] / (k1 * query_counter[term])
-            pls = myread(index_body, term)
+            pls = read_pls(index_body, term)
             for pl in pls:
                 if pl[0] == 0:
                     continue
-                B = (1-b)+(b * pages[pl[0]][1] / d_avg)
-                TFij = ((k1+1)*pl[1])/((B*k1)+pl[1])
-                can_dict[pl[0]] += IDF * TFij * TFiq
-    for d_id, _ in can_dict.most_common(100):
+                B = (1 - b) + (b * pages[pl[0]][1] / d_avg)
+                TFij = ((k1 + 1) * pl[1]) / ((B * k1) + pl[1])
+                bodies[pl[0]] += IDF * TFij * TFiq
+
+    weighted = Counter()
+    _, max_w = bodies.most_common(1)[0]
+    for d_id, weight in bodies.most_common(100):
+        weighted[d_id] += weight/max_w * weight_body
+
+    ids = Counter()
+    postings = [read_pls(index_title, qword) for qword in query]
+    for pls in postings:
+        if pls:
+            for posting in pls:
+                ids[posting[0]] = ids.get(posting[0], 0) + 1
+    _, max_t_w = ids.most_common(1)[0]
+    for d_id, weight in ids.most_common(100):
+        weighted[d_id] += weight/max_t_w * weight_title
+
+    for d_id, _ in weighted.most_common(100):
         title = pages[d_id][0]
         res.append((d_id, title))
 
     # END SOLUTION
     return jsonify(res)
+
 
 @app.route("/search_body")
 def search_body():
@@ -171,7 +206,7 @@ def search_title():
     # BEGIN SOLUTION
 
     ids = {}
-    postings = [myread(index_title, qword) for qword in query]
+    postings = [read_pls(index_title, qword) for qword in query]
     for pls in postings:
         if pls:
             for posting in pls:
@@ -215,7 +250,7 @@ def search_anchor():
     # BEGIN SOLUTION
 
     ids = {}
-    postings = [myread(index_anchor, qword) for qword in query]
+    postings = [read_pls(index_anchor, qword) for qword in query]
     for pls in postings:
         if pls:
             for posting in pls:
@@ -232,7 +267,7 @@ def search_anchor():
 
 
 @app.route("/get_pagerank", methods=['POST'])
-def get_pagerank():  # TODO: Test
+def get_pagerank():
     ''' Returns PageRank values for a list of provided wiki article IDs.
 
         Test this by issuing a POST request to a URL like:
@@ -253,10 +288,8 @@ def get_pagerank():  # TODO: Test
         return jsonify(res)
     # BEGIN SOLUTION
 
-    pr = pr_results.vertices.select("id", "pagerank")
-    for id in wiki_ids:
-        filtered_rdd = pr.filter(lambda x: id in x)
-        res.append(filtered_rdd.values().collect())
+    for doc_id in wiki_ids:
+        res.append(pr_results.get(doc_id, 0))
 
     # END SOLUTION
     return jsonify(res)
@@ -307,20 +340,7 @@ def tokenizer(text):
     return tokens
 
 
-
-
-def get_candidate_documents_and_scores(index,words,pls):
-    """
-    Based on assignment 4.
-    Returns TFIDF scores of documents.
-    Args:
-        index: InvertedIndex
-        words: InvertedIndex's posting_list_iter, but filtered
-        pls: InvertedIndex's posting_list_iter, but filtered
-
-    Returns:
-        candidates: dictionary - {(doc_id, term): tfidf}
-    """
+def get_candidate_documents_and_scores(index, words, pls):
 
     candidates = {}
     candidates_temp = {}
@@ -328,7 +348,8 @@ def get_candidate_documents_and_scores(index,words,pls):
     for term, pl in zip(words, pls):
         if not pl or pl[0] == 0:
             continue
-        normlized_tfidf = [(doc_id, (freq / pages[doc_id][1])*np.log10(pages_len * index.df[term])) for doc_id, freq in pl if doc_id]
+        normlized_tfidf = [(doc_id, (freq / pages[doc_id][1]) * np.log10(pages_len * index.df[term])) for doc_id, freq
+                           in pl if doc_id]
 
         for doc_id, tfidf in normlized_tfidf:
             if doc_id not in candidates_temp:
@@ -339,7 +360,7 @@ def get_candidate_documents_and_scores(index,words,pls):
     return candidates, candidates_temp
 
 
-def myread(index, word):
+def read_pls(index, word):
     '''
     Based on assignment 2.
     Used for faster recovery of information.
@@ -354,42 +375,25 @@ def myread(index, word):
 
     if not index.posting_locs.get(word):
         return
-    f_name, offset, n_bytes = index.posting_locs[word][0][0], index.posting_locs[word][0][1], index.df[word]*6
+    f_name, offset, n_bytes = index.posting_locs[word][0][0], index.posting_locs[word][0][1], index.df[word] * 6
     with open(index.iname + "/" + f_name, 'rb') as f:
         pls = []
         f.seek(offset)
-        for i in range(int(n_bytes/6)):
+        for i in range(int(n_bytes / 6)):
             b = (f.read(6))
             doc_id = int.from_bytes(b[0:4], 'big')
             tf = int.from_bytes(b[4:], 'big')
             pls.append((doc_id, tf))
     return pls
 
+
 def generate_document_tfidf_matrix(query_to_search, index):
-    '''
-    words = []
-    pls = []
-    for word in query_to_search:
-        words.append(word)
-        pls.append(myread(index, word))
-    total_vocab_size = len(words)
-    candidates_scores = get_candidate_documents_and_scores(index, words, pls)
-    unique_candidates = np.unique([doc_id for doc_id, freq in candidates_scores.keys()])
-    D = np.zeros((len(unique_candidates), total_vocab_size))
-    D = pd.DataFrame(D)
-    D.index = unique_candidates
-    D.columns = words
-    for tup, tfidf in candidates_scores.items():  # TODO: Too expensive
-        doc_id, term = tup
-        D.iloc[[doc_id], [term]] = tfidf
-    return D
-    '''
 
     words = []
     pls = []
     for word in query_to_search:
         words.append(word)
-        pls.append(myread(index, word))
+        pls.append(read_pls(index, word))
 
     total_vocab_size = len(words)
     candidates_scores, cand_indices = get_candidate_documents_and_scores(index, words, pls)
@@ -408,7 +412,6 @@ def generate_document_tfidf_matrix(query_to_search, index):
 
 
 def cosine_similarity(D, Q, query_size):
-
     D1 = D.dot(Q)
     dict = {}
 
@@ -420,21 +423,21 @@ def cosine_similarity(D, Q, query_size):
 
 def generate_query_tfidf_vector(query_to_search, index):
     C = Counter(query_to_search)
-    Qvector = [C[word]/np.log10(index.df[word] * len(query_to_search)) for word in query_to_search]
+    Qvector = [C[word] / np.log10(index.df[word] * len(query_to_search)) for word in query_to_search]
     return Qvector
 
 
 def get_top_n(sim_dict, N=100):
-    return sorted([(doc_id, np.round(score,5)) for doc_id, score in sim_dict.items()], key = lambda x: x[1],reverse=True)[:N]
+    return sorted([(doc_id, np.round(score, 5)) for doc_id, score in sim_dict.items()], key=lambda x: x[1],
+                  reverse=True)[:N]
 
 
 def get_posting_iter(index):
     words, pls = zip(*index.posting_lists_iter())
-    return words,pls
+    return words, pls
 
 
 def get_topN_score_for_queries(queries_to_search, index, N=100):
-
     D = generate_document_tfidf_matrix(queries_to_search, index)
     Q = generate_query_tfidf_vector(queries_to_search, index)
     sim_dict = cosine_similarity(D, Q, len(queries_to_search))
@@ -442,8 +445,22 @@ def get_topN_score_for_queries(queries_to_search, index, N=100):
     return ranked
 
 
+def qexpand(query):
+    '''
+    Simple query expansion using a prebuilt model.
+    Args:
+        query: Tokenized query.
 
-
+    Returns:
+        Expanded query.
+    '''
+    new_q = [x for x in query]
+    for qword in query:
+        ret = model.most_similar(qword, topn=25)
+        for word, _ in ret:
+            if word in qword or qword in word:
+                new_q.append(word)
+    return new_q
 
 
 if __name__ == '__main__':
